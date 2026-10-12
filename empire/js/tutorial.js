@@ -100,7 +100,7 @@ export function createTutorial() {
     refs.prog = document.createElement('span'); refs.prog.className = 'we-tut-prog';
     refs.next = document.createElement('button'); refs.next.className = 'we-btn we-btn--primary'; refs.next.type = 'button';
     refs.skip = document.createElement('button'); refs.skip.className = 'we-btn'; refs.skip.type = 'button'; refs.skip.textContent = '跳過教學';
-    refs.next.addEventListener('click', () => advance());
+    refs.next.addEventListener('click', () => { if (cur && cur.mode === 'next') advance(); });
     refs.skip.addEventListener('click', () => skip());
     const row = document.createElement('div'); row.className = 'we-tut-row';
     row.append(refs.prog, refs.skip, refs.next);
@@ -158,6 +158,7 @@ export function createTutorial() {
   function enter() {
     cur = steps[idx];
     shownKey = ''; lastTarget = null;
+    if (refs.next) refs.next.style.display = cur && cur.mode === 'next' ? '' : 'none';
     cur?.enter?.();
   }
   function advance() {
