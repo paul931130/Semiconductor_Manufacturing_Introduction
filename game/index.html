@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>晶圓闖關 Wafer Quest</title>
+  <meta name="description" content="跟著一片晶圓從沙子走到晶片的互動闖關遊戲，題目取自《半導體製造概論》。An interactive quiz game based on Introduction to Semiconductor Manufacturing.">
+  <link rel="icon" href="../images/cover.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="brand" id="home-btn" type="button">
+      <img src="../images/cover.svg" alt="" width="28" height="28">
+      <span data-i18n="gameTitle">晶圓闖關</span>
+    </button>
+    <div class="topbar-right">
+      <div class="yield-chip" id="yield-chip" hidden>
+        <span data-i18n="lineYield">累計良率</span>
+        <strong id="yield-value">100%</strong>
+      </div>
+      <button class="lang-btn" id="lang-btn" type="button">EN</button>
+    </div>
+  </header>
+
+  <main id="app" aria-live="polite"></main>
+
+  <footer class="footer">
+    <span data-i18n="footerBased">題目內容改編自</span>
+    <a href="https://github.com/chenwei810/Semiconductor_Manufacturing_Introduction" target="_blank" rel="noopener" data-i18n="bookTitle">《半導體製造概論》</a>
+    · <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>
+  </footer>
+
+  <script src="game.js"></script>
+  <script src="data/zh-TW/part0.js"></script>
+  <script src="data/zh-TW/part1.js"></script>
+  <script src="data/zh-TW/part2.js"></script>
+  <script src="data/zh-TW/part3.js"></script>
+  <script src="data/zh-TW/part4.js"></script>
+  <script src="data/zh-TW/part5.js"></script>
+  <script src="data/zh-TW/part6.js"></script>
+  <script src="data/en/part0.js"></script>
+  <script src="data/en/part1.js"></script>
+  <script src="data/en/part2.js"></script>
+  <script src="data/en/part3.js"></script>
+  <script src="data/en/part4.js"></script>
+  <script src="data/en/part5.js"></script>
+  <script src="data/en/part6.js"></script>
+  <script>WaferQuest.start();</script>
+</body>
+</html>

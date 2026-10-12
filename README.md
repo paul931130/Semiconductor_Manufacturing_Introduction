@@ -13,6 +13,8 @@
 
 </div>
 
+> 🎮 **[晶圓闖關 Wafer Quest](https://paul931130.github.io/Semiconductor_Manufacturing_Introduction/game/)**：把全書 25 章變成 25 個工作站的互動闖關遊戲（繁中／English）。An interactive quiz game that takes one wafer through all 25 chapters. Source: [`game/`](game/index.html)
+
 An open, beginner-friendly book that follows one silicon wafer from sand, through the fab, test and packaging, until it becomes a chip. It skips heavy physics and focuses on process flow, terminology and know-how from the fab floor, with term boxes and know-how boxes in every chapter. No background in semiconductor physics is needed.
 
 ---
