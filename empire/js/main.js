@@ -11,6 +11,7 @@ import { el, fill, openDialog, toast, money, pct } from './tycoon/ui.js';
 import './puzzle/index.js'; // 註冊 window.startPuzzleSet，取代 bridge 的 stub
 import * as Audio from './audio.js';
 import { createTutorial } from './tutorial.js';
+import { initNpc, npcModeButton } from './npc/index.js';
 
 const $ = id => document.getElementById(id);
 const parse = h => { const p = (h || '').replace(/^#/, '').split('/'); return { name: p[0] || 'title', arg: p[1] || '' }; };
@@ -201,6 +202,7 @@ function mountBar() {
       location.hash = '#fab/f1'; route(); tut.start({ fresh: true });
     } }),
     muteButton(),
+    window.EmpireNpc ? npcModeButton() : null,
     el('button', { class: 'we-btn', type: 'button', text: '標題', onclick: () => { location.hash = '#title'; } }));
   // 「產線」按鈕：回到目前選的廠
   $('we-bar').querySelector('[data-nav="fab-link"]').onclick = () => { location.hash = '#fab/' + view.getFab(); };
@@ -265,6 +267,8 @@ async function main() {
   S.getState().clock.paused = true;
   Clock.setPaused(true);
   Audio.setVolumeSource(() => S.getState().settings.sound);
+  // NPC 對話（載入失敗時遊戲照常進行，只是沒有 NPC）
+  try { await initNpc({ tutorialActive: () => !!tut?.isActive() }); } catch (e) { console.error('[npc]', e); }
   tut = createTutorial();
   mountBar();
   installRouterEvents();

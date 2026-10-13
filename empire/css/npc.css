@@ -1,0 +1,80 @@
+/* NPC 對話框與頭像：選擇器全部以 .npc- 為前綴。顏色沿用 base.css 的 --we-* 代幣。 */
+.npc-root { --npc-accent: #ffb347; position: fixed; left: 0; right: 0; bottom: 0; z-index: 500; display: flex; justify-content: center;
+  padding: 0 8px calc(8px + env(safe-area-inset-bottom)); pointer-events: none; }
+.npc-root[hidden] { display: none; }
+.npc-root[data-npc="facility"], .npc-pt[data-npc="facility"] { --npc-accent: #ffb347; }
+.npc-root[data-npc="engineer"] { --npc-accent: #4aa8ff; }
+.npc-root[data-npc="sales"] { --npc-accent: #c58cff; }
+.npc-scrim { display: none; }
+.npc-root.is-block { top: 0; align-items: flex-end; }
+.npc-root.is-block .npc-scrim { display: block; position: fixed; inset: 0; background: rgba(5, 10, 20, .68); pointer-events: auto; }
+
+.npc-card { position: relative; box-sizing: border-box; width: 100%; max-width: 560px; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto;
+  display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; padding: 10px 12px 12px;
+  background: var(--we-panel, #151d2f); color: var(--we-fg, #e9eefb); border: 1px solid var(--npc-accent); border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .55), 0 0 0 1px rgba(0, 0, 0, .35); pointer-events: auto; font-size: 14px; line-height: 1.55; }
+.npc-root.is-in .npc-card { animation: npc-in .22s ease-out; }
+@keyframes npc-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+.npc-pt { width: 64px; height: 64px; border-radius: 14px; overflow: hidden; border: 2px solid var(--npc-accent, #ffb347); background: var(--we-panel2, #1d2740); align-self: start; flex: none; }
+.npc-pt .npc-svg, .npc-svg { display: block; width: 100%; height: 100%; }
+.npc-card:not(.is-typed) .npc-pt .npc-svg { animation: npc-talk .46s ease-in-out infinite; transform-origin: 50% 100%; }
+@keyframes npc-talk { 50% { transform: translateY(-1.5px) scale(1.015); } }
+
+.npc-main { min-width: 0; }
+.npc-head { display: flex; align-items: baseline; gap: 8px; min-height: 22px; }
+.npc-name { font-weight: 700; color: var(--npc-accent); }
+.npc-role { font-size: 12px; color: var(--we-mut, #9aa8c6); }
+.npc-x { margin: -12px -10px -10px auto; width: 44px; height: 44px; border: 0; background: none; color: var(--we-mut, #9aa8c6); font: inherit; font-size: 22px; line-height: 1; cursor: pointer; touch-action: manipulation; align-self: flex-start; }
+.npc-x[hidden] { display: none; }
+.npc-x:hover { color: var(--we-fg, #e9eefb); }
+.npc-x:focus-visible, .npc-adv:focus-visible, .npc-card button:focus-visible { outline: 2px solid var(--npc-accent); outline-offset: 2px; }
+
+.npc-textwrap { position: relative; margin-top: 2px; border-radius: 8px; }
+.npc-text, .npc-ttext { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; }
+.npc-ghost { visibility: hidden; }
+.npc-live { position: absolute; left: 0; top: 0; width: 100%; }
+.npc-adv { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; margin: 0; border: 0; background: transparent; cursor: pointer; border-radius: 8px; touch-action: manipulation; }
+.npc-more { position: absolute; right: 2px; bottom: -2px; color: var(--npc-accent); font-size: 12px; animation: npc-blink 1s steps(2, jump-none) infinite; pointer-events: none; }
+.npc-more[hidden] { display: none; }
+@keyframes npc-blink { 50% { opacity: .25; } }
+.npc-card.is-fact .npc-textwrap { padding: 4px 8px; border-left: 3px solid var(--we-accent, #ffc933); background: rgba(255, 201, 51, .08); }
+.npc-card.is-fact .npc-textwrap::before { content: "你知道嗎"; display: block; font-size: 11px; font-weight: 700; color: var(--we-accent, #ffc933); }
+.npc-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.npc-extra:empty { display: none; }
+.npc-extra { margin-top: 8px; }
+.npc-evt-h { font-weight: 700; color: var(--npc-accent); font-size: 13px; }
+.npc-effect { margin: 2px 0 4px; font-size: 15px; }
+.npc-choices { margin: 8px 0; }
+.npc-extra .ty-factcard { margin-top: 8px; }
+.npc-err { min-height: 1em; margin: 2px 0; }
+
+/* 小提示：toast 與底部對話框不要重疊 */
+body.npc-open .ty-toasts { bottom: calc(var(--npc-h, 0px) + 16px + env(safe-area-inset-bottom)); }
+
+/* 教學卡片裡的頭像（tutorial.js） */
+.npc-tcard { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; margin-bottom: 6px; }
+.npc-pt--sm { width: 52px; height: 52px; border-radius: 12px; }
+.npc-pt--sm .npc-svg { animation: none; }
+.npc-who { font-size: 12px; color: var(--we-mut, #9aa8c6); }
+.npc-who b { color: var(--we-accent, #ffc933); font-size: 13px; }
+.npc-tbody { min-width: 0; }
+.npc-tbody h3 { margin: 0 0 2px; }
+.npc-ttext { margin: 0 0 4px; cursor: pointer; }
+.we-tut-card p.npc-ttext { margin-bottom: 4px; }
+
+.npc-mode[aria-pressed="true"] { border-color: var(--we-warn, #ffb347); }
+
+@media (max-width: 420px) {
+  .npc-card { grid-template-columns: 52px minmax(0, 1fr); gap: 8px; padding: 8px 10px 10px; }
+  .npc-pt { width: 52px; height: 52px; border-radius: 12px; }
+  .npc-tcard { grid-template-columns: 44px minmax(0, 1fr); gap: 8px; }
+  .npc-pt--sm { width: 44px; height: 44px; }
+}
+
+/* 減少動態：關掉滑入、說話抖動、閃爍（打字機另在 type.js 偵測並直接顯示全文） */
+.npc-root.npc-still .npc-card, .npc-root.npc-still .npc-pt .npc-svg, .npc-root.npc-still .npc-more { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .npc-root .npc-card, .npc-pt .npc-svg, .npc-more { animation: none !important; }
+}

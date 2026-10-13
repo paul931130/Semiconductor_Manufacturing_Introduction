@@ -1,0 +1,192 @@
+/* 無塵室 Q 版寫實美術：機台插畫、地板、AMHS 軌道、FOUP、事件特效。由 tycoon.css 以 @import 載入。 */
+.ty-fab { --fa-amber: 255, 176, 40; }
+
+/* ---------- 地板（高架地板 + 透氣孔）與天花板 ---------- */
+.ty-line {
+  background:
+    radial-gradient(circle, rgba(8, 14, 28, .55) 1px, transparent 1.6px) 0 0 / 7px 7px,
+    linear-gradient(rgba(255, 255, 255, .10) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(90deg, rgba(255, 255, 255, .10) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(180deg, #46536c, #394660);
+  border: 1px solid var(--ty-line);
+}
+.ty-line::before { /* 天花板 FFU 燈板 */
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 7px; z-index: 0; pointer-events: none;
+  background: repeating-linear-gradient(90deg, rgba(235, 245, 255, .55) 0 30px, rgba(0, 0, 0, 0) 30px 36px), #1d2638;
+  opacity: .8;
+}
+.ty-line[data-mode="v"]::before { right: auto; width: 7px; bottom: 0; height: auto; background: repeating-linear-gradient(180deg, rgba(235, 245, 255, .55) 0 30px, rgba(0, 0, 0, 0) 30px 36px), #1d2638; }
+.ty-cells, .ty-lots { position: relative; z-index: 1; }
+.ty-lots { position: absolute; z-index: 3; }
+
+/* 黃光區（微影）：整區琥珀色安全光 */
+.ty-cellwrap { position: relative; }
+.ty-cellwrap--litho::before {
+  content: ""; position: absolute; inset: -8px 0 -8px 0; pointer-events: none; z-index: 0;
+  background: linear-gradient(180deg, rgba(var(--fa-amber), .30), rgba(var(--fa-amber), .14) 60%, rgba(var(--fa-amber), .22));
+  box-shadow: inset 0 0 0 1px rgba(var(--fa-amber), .25);
+}
+.ty-cellwrap--litho .fa-m { filter: sepia(.45) saturate(1.5) hue-rotate(-6deg) brightness(.97); }
+.ty-line[data-mode="v"] .ty-cellwrap--litho::before { inset: 0 -8px 0 0; }
+.fa-baylabel { position: absolute; left: 2px; bottom: 2px; font-size: 9px; letter-spacing: .5px; color: rgba(255, 213, 120, .9); pointer-events: none; z-index: 2; }
+.ty-line[data-mode="v"] .fa-baylabel { display: none; }
+
+/* ---------- AMHS 天車軌道 + FOUP ---------- */
+.ty-lots::before { content: ""; position: absolute; left: -8px; right: -8px; top: 2px; height: 5px; border-radius: 3px; background: linear-gradient(#d4dcea, #7d8ba2); box-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.ty-lots::after { content: ""; position: absolute; left: -8px; right: -8px; top: -6px; height: 8px; opacity: .6;
+  background: repeating-linear-gradient(90deg, #8d99ae 0 2px, transparent 2px 44px) 20px 0; }
+.ty-line[data-mode="v"] .ty-lots::before { left: 15px; right: auto; width: 5px; top: -8px; bottom: -8px; height: auto; background: linear-gradient(90deg, #d4dcea, #7d8ba2); }
+.ty-line[data-mode="v"] .ty-lots::after { display: none; }
+.ty-lot { position: absolute; left: -11px; top: 0; width: 22px; height: 34px; border-radius: 0; background: none; box-shadow: none; animation: none; will-change: transform; display: block; }
+.ty-lot.is-live { transition: transform var(--ty-tick, 250ms) linear, opacity .3s; }
+.ty-lot--out { opacity: .2; } .ty-lot--scrap { opacity: 0; transition: opacity .4s; }
+.fa-cab { position: absolute; left: 10px; top: 0; width: 2px; height: 10px; background: #b6c2d6; transition: height .35s ease; }
+.fa-cab::before { content: ""; position: absolute; left: -5px; top: 0; width: 12px; height: 5px; border-radius: 2px; background: #5b6a85; border: 1px solid #aebbd1; box-sizing: border-box; } /* 天車 OHT */
+.fa-foup { position: absolute; left: 0; top: 9px; width: 22px; height: 19px; box-sizing: border-box; border-radius: 4px 4px 3px 3px; border: 1px solid #6c7b94;
+  background: linear-gradient(180deg, #ffd9a0, #e3a556 55%, #c9893a); color: #2a1a05; font-size: 9px; font-weight: 700; line-height: 1; text-align: center; display: grid; place-items: end center; padding-bottom: 2px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.5); transition: transform .35s ease; }
+.fa-foup::before { content: ""; position: absolute; left: 5px; top: -4px; width: 10px; height: 4px; border-radius: 2px 2px 0 0; background: #8d99ae; border: 1px solid #5b6a85; border-bottom: 0; box-sizing: border-box; } /* 頂部抓取法蘭 */
+.fa-foup::after { content: ""; position: absolute; left: 2px; right: 2px; top: 2px; height: 8px; border-radius: 2px; background: repeating-linear-gradient(180deg, rgba(255,255,255,.7) 0 1px, rgba(60,40,10,.35) 1px 2px); } /* 一疊晶圓 */
+.ty-lot.is-down .fa-foup { transform: translateY(5px); }
+.ty-lot.is-down .fa-cab { height: 15px; }
+.fa-hot { display: none; position: absolute; left: -7px; top: 26px; width: 36px; z-index: 4; padding: 1px 0; border-radius: 3px; background: #ff3b3b; color: #fff; font-size: 8.5px; font-weight: 800; letter-spacing: .5px; text-align: center; line-height: 1.2; box-shadow: 0 0 6px #ff3b3b; }
+.ty-lot.is-hot .fa-hot { display: block; animation: fa-flash .55s steps(2, jump-none) infinite; }
+.ty-lot.is-hot .fa-foup { border-color: #ff3b3b; box-shadow: 0 0 8px 2px rgba(255, 59, 59, .8); }
+.ty-lot.is-hot { z-index: 5; }
+.ty-line[data-mode="v"] .ty-lot { left: 7px; top: -11px; width: 22px; height: 22px; }
+.ty-line[data-mode="v"] .fa-cab { display: none; }
+.ty-line[data-mode="v"] .fa-foup { top: 1px; left: 0; }
+.ty-line[data-mode="v"] .ty-lot.is-down .fa-foup { transform: translateX(5px); }
+.ty-line[data-mode="v"] .fa-hot { top: -4px; left: 24px; width: 30px; }
+.ty-line[data-mode="h"] .ty-lots { height: 34px; bottom: auto; }
+@keyframes fa-flash { 50% { opacity: .25; } }
+
+/* ---------- 機台槽位 ---------- */
+.ty-slot { background: rgba(18, 26, 44, .55); backdrop-filter: none; }
+.ty-slot:hover { background: rgba(30, 44, 74, .65); }
+.ty-slot.is-empty { background: rgba(20, 20, 30, .35); }
+.fa-art { display: block; width: 100%; max-width: 86px; margin: -4px auto 0; pointer-events: none; }
+.fa-art svg { display: block; width: 100%; height: auto; overflow: visible; }
+.fa-txt { display: flex; flex-direction: column; min-width: 0; }
+.ty-exit { background: rgba(18, 26, 44, .4); }
+.ty-line[data-mode="v"] .fa-art { width: 54px; max-width: 54px; flex: 0 0 54px; margin: 0; }
+.ty-line[data-mode="v"] .fa-txt { flex: 1 1 0; text-align: left; }
+.ty-line[data-mode="v"] .fa-txt .ty-slot-cat { display: inline; }
+.ty-line[data-mode="v"] .ty-exit .fa-art { flex-basis: 54px; }
+.ty-line[data-mode="v"] .ty-exit { justify-content: flex-start; }
+.ty-line[data-mode="h"] .ty-slot { min-height: 118px; }
+.ty-line[data-mode="h"] .ty-exit { min-height: 118px; justify-content: flex-start; padding-top: 2px; }
+.fa-hotdock { font-size: 10px; font-weight: 800; color: #fff; background: #ff3b3b; border-radius: 3px; padding: 0 4px; animation: fa-flash .55s steps(2, jump-none) infinite; margin-top: 2px; }
+
+/* ---------- 機台配色（依等級升級：L1 樸素 → L5 流線＋光塔） ---------- */
+.fa-m { --fa-line: rgba(8, 14, 28, .6); --fa-body: #8a93a1; --fa-top: #a3acb9; --fa-side: #6e7785; --fa-dkb: #5c6573; --fa-dkt: #737c8a; --fa-dks: #4a5260; --fa-dark: #2d3441; --fa-pipe: #7c8696; --fa-glass: rgba(130, 170, 210, .35); --fa-liq: #4aa8e8; }
+.fa-L2 { --fa-body: #a6afbc; --fa-top: #bcc4cf; --fa-side: #858e9c; --fa-dkb: #727b89; --fa-dkt: #8a93a1; --fa-dks: #5d6674; --fa-glass: rgba(140, 185, 225, .42); }
+.fa-L3 { --fa-body: #c4ccd8; --fa-top: #d8dee7; --fa-side: #9ea8b6; --fa-dkb: #8791a0; --fa-dkt: #a0a9b7; --fa-dks: #727c8b; --fa-glass: rgba(140, 200, 240, .5); }
+.fa-L4 { --fa-body: #dde3ec; --fa-top: #eef2f7; --fa-side: #b4bfce; --fa-dkb: #9aa6b8; --fa-dkt: #b4bdcb; --fa-dks: #818da0; --fa-glass: rgba(120, 205, 250, .58); }
+.fa-L5 { --fa-body: #f4f7fb; --fa-top: #ffffff; --fa-side: #c7d3e3; --fa-dkb: #aab8cc; --fa-dkt: #c2cddd; --fa-dks: #8e9db3; --fa-glass: rgba(100, 215, 255, .66); filter: drop-shadow(0 0 3px rgba(120, 210, 255, .55)); }
+.fa-m * { stroke: var(--fa-line); stroke-width: .6; stroke-linejoin: round; }
+.fa-m .fa-front { fill: var(--fa-body); } .fa-m .fa-top { fill: var(--fa-top); } .fa-m .fa-side { fill: var(--fa-side); }
+.fa-m .fa-dk.fa-front { fill: var(--fa-dkb); } .fa-m .fa-dk.fa-top { fill: var(--fa-dkt); } .fa-m .fa-dk.fa-side { fill: var(--fa-dks); }
+.fa-m .fa-pk.fa-front { fill: #c79a62; } .fa-m .fa-pk.fa-top { fill: #dcb480; } .fa-m .fa-pk.fa-side { fill: #a87c48; }
+.fa-m .fa-d { fill: var(--fa-dark); }
+.fa-m .fa-g { fill: var(--fa-glass); stroke: rgba(255, 255, 255, .45); }
+.fa-m .fa-g.fa-lit { fill: rgba(255, 205, 90, .7); }
+.fa-m .fa-pipe { fill: none; stroke: var(--fa-pipe); stroke-width: 1.7; stroke-linecap: round; }
+.fa-m .fa-ring { fill: none; stroke: rgba(30, 40, 60, .55); stroke-width: .9; }
+.fa-m .fa-liq { fill: var(--fa-liq); stroke: rgba(255, 255, 255, .25); }
+.fa-m .fa-liq.fa-cu { fill: #d98a4a; }
+.fa-m .fa-liq.fa-dash { stroke: rgba(255, 255, 255, .6); stroke-width: .8; stroke-dasharray: 3 4; }
+.fa-m .fa-pad { fill: #59616f; } .fa-m .fa-conv { fill: #29303d; }
+.fa-m .fa-shadow { fill: rgba(5, 10, 20, .45); stroke: none; }
+.fa-m .fa-ghost { fill: none; stroke: rgba(255, 184, 74, .7); stroke-width: 1.3; stroke-dasharray: 3 3; }
+.fa-m .fa-pip { fill: rgba(255, 255, 255, .12); stroke: none !important; } .fa-m .fa-pip-on { fill: var(--ty-gold, #f4c95d); }
+.fa-m .fa-lamp { fill: #2a3345; stroke: rgba(0,0,0,.5); }
+.fa-m .fa-spark { stroke: #e6bbff; stroke-width: 1; opacity: 0; }
+
+/* 發光部位（忙碌時亮起、脈動；閒置時暗淡） */
+.fa-m .fa-glow { stroke: none; opacity: .14; transition: opacity .4s; }
+.fa-orange { fill: #ff6a2b; } .fa-teal { fill: #35e0c4; } .fa-violet { fill: #7a7bff; } .fa-pink { fill: #ff7ad0; } .fa-purple { fill: #b45cff; } .fa-cyan { fill: #52e5ff; } .fa-cu { fill: #ff9f55; }
+.fa-m .fa-glow.fa-cu { fill: #ffa45f; }
+.is-busy .fa-m .fa-glow { opacity: .95; animation: fa-pulse 1.6s ease-in-out infinite; }
+.is-busy .fa-k-furnace .fa-glow { animation: fa-flick 2.2s ease-in-out infinite; filter: drop-shadow(0 0 3px #ff5a14); }
+.is-busy .fa-k-rta .fa-glow { animation: fa-flick 1.1s ease-in-out infinite; filter: drop-shadow(0 0 2px #ff8a3a); }
+.is-busy .fa-k-etch_chamber .fa-glow { animation: fa-pulse .8s ease-in-out infinite; filter: drop-shadow(0 0 4px #b45cff); }
+.is-busy .fa-k-etch_chamber .fa-spark { opacity: 1; animation: fa-flash .35s steps(2, jump-none) infinite; }
+.is-busy .fa-k-pvd_sputter .fa-glow { animation: fa-pulse 1.1s ease-in-out infinite; filter: drop-shadow(0 0 3px #7a7bff); }
+.is-busy .fa-k-scanner .fa-glow { animation: fa-flick .7s steps(3, jump-none) infinite; }
+.is-busy .fa-k-implanter .fa-beam { animation: fa-pulse .6s linear infinite; filter: drop-shadow(0 0 3px #52e5ff); }
+@keyframes fa-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@keyframes fa-flick { 0%, 100% { opacity: .75; } 30% { opacity: 1; } 55% { opacity: .62; } 80% { opacity: .95; } }
+
+/* 運動部位（只在忙碌時動） */
+.fa-m .fa-spin { transform-box: fill-box; transform-origin: center; }
+.is-busy .fa-spin { animation: fa-rot 1.4s linear infinite; }
+.is-busy .fa-dash { animation: fa-dash 1.1s linear infinite; }
+.is-busy .fa-slide { animation: fa-slide 2.6s ease-in-out infinite alternate; }
+.is-busy .fa-bub { animation: fa-bub 1.4s ease-in infinite; }
+.is-busy .fa-bub.fa-b2 { animation-delay: .7s; }
+@keyframes fa-rot { to { transform: rotate(360deg); } }
+@keyframes fa-dash { to { stroke-dashoffset: -14; } }
+@keyframes fa-slide { from { transform: translateX(-4px); } to { transform: translateX(14px); } }
+@keyframes fa-bub { 0% { transform: translateY(2px); opacity: 0; } 25% { opacity: 1; } 100% { transform: translateY(-8px); opacity: 0; } }
+
+/* 光塔狀態：忙碌=綠、閒置=黃、故障=紅閃 */
+.is-busy .fa-lg { fill: #4cf08a; filter: drop-shadow(0 0 2px #4cf08a); }
+.is-idle .fa-ly { fill: #ffd34d; }
+.is-idle .fa-lg { fill: #1f6a40; }
+.is-busy .fa-ly { fill: #6b5a22; }
+.is-bad .fa-lr { fill: #ff3b3b; filter: drop-shadow(0 0 3px #ff3b3b); animation: fa-flash .6s steps(2, jump-none) infinite; }
+
+/* ---------- 事件：故障（紅燈 + 冒煙） ---------- */
+.ty-slot.is-bad { background: rgba(70, 20, 30, .7); }
+.fa-fail { position: absolute; top: 4px; left: 6px; width: 11px; height: 11px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffb0b0, #ff2b2b 60%, #8a0b0b); box-shadow: 0 0 8px 3px rgba(255, 50, 50, .8); animation: fa-flash .6s steps(2, jump-none) infinite; pointer-events: none; z-index: 3; }
+.fa-smoke { position: absolute; left: 40%; top: 12px; width: 0; height: 0; pointer-events: none; z-index: 3; }
+.fa-smoke i { position: absolute; left: -7px; top: 0; width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle, rgba(215, 220, 230, .85), rgba(120, 128, 140, .0) 70%); opacity: 0; animation: fa-puff 2.4s ease-out infinite; }
+.fa-smoke i:nth-child(2) { animation-delay: .8s; left: -2px; } .fa-smoke i:nth-child(3) { animation-delay: 1.6s; left: -11px; }
+@keyframes fa-puff { 0% { transform: translateY(14px) scale(.4); opacity: 0; } 20% { opacity: .9; } 100% { transform: translateY(-20px) translateX(8px) scale(1.7); opacity: 0; } }
+
+/* ---------- 事件：微粒汙染（飄浮灰塵） ---------- */
+.fa-dustwrap { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 4; display: none; }
+.fa-particle .fa-dustwrap { display: block; background: radial-gradient(ellipse at 50% 40%, rgba(220, 200, 150, .14), transparent 70%); }
+.fa-dust { position: absolute; left: var(--x); top: var(--y); width: var(--s); height: var(--s); border-radius: 50%; background: #e9d9a8; box-shadow: 0 0 3px rgba(240, 220, 160, .8); opacity: 0; animation: fa-drift var(--t) linear var(--dl) infinite; }
+@keyframes fa-drift { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: .9; } 85% { opacity: .8; } 100% { transform: translate(var(--dx), var(--dy)); opacity: 0; } }
+
+/* ---------- 事件：停電（全暗、只剩緊急照明） ---------- */
+.fa-darkwrap { position: absolute; inset: 0; z-index: 6; pointer-events: none; opacity: 0; transition: opacity .7s ease; border-radius: inherit;
+  background:
+    radial-gradient(circle at 6% 0%, rgba(255, 110, 50, .32), transparent 20%),
+    radial-gradient(circle at 50% 0%, rgba(255, 110, 50, .22), transparent 16%),
+    radial-gradient(circle at 94% 0%, rgba(255, 110, 50, .32), transparent 20%),
+    rgba(2, 5, 14, .74); }
+.fa-outage .fa-darkwrap { opacity: 1; }
+.fa-emerg { position: absolute; top: 3px; width: 18px; height: 5px; border-radius: 3px; background: #ff6a30; box-shadow: 0 0 10px 4px rgba(255, 106, 48, .9); z-index: 7; pointer-events: none; opacity: 0; transition: opacity .7s; animation: fa-flash 1.6s steps(2, jump-none) infinite; }
+.fa-emerg:nth-of-type(1) { left: 5%; } .fa-emerg:nth-of-type(2) { left: calc(50% - 9px); animation-delay: .8s; } .fa-emerg:nth-of-type(3) { right: 5%; }
+.ty-line[data-mode="v"] .fa-emerg { left: 3px !important; right: auto; width: 5px; height: 18px; top: 4%; }
+.ty-line[data-mode="v"] .fa-emerg:nth-of-type(2) { top: 50%; } .ty-line[data-mode="v"] .fa-emerg:nth-of-type(3) { top: auto; bottom: 4%; }
+.fa-outage .fa-emerg { opacity: 1; }
+/* 機台停止發光、光塔熄滅（停電或停線時） */
+.fa-halt .fa-m .fa-glow { opacity: .05 !important; animation: none !important; filter: none !important; }
+.fa-halt .fa-m .fa-lamp { fill: #232b3a !important; animation: none !important; filter: none !important; }
+.fa-halt .fa-spin, .fa-halt .fa-dash, .fa-halt .fa-slide, .fa-halt .fa-bub, .fa-halt .fa-spark { animation: none !important; }
+.fa-outage .fa-fail { z-index: 8; }
+
+/* ---------- 減少動態：全部靜止 ---------- */
+.ty-still .fa-m *, .ty-still .fa-fail, .ty-still .fa-smoke i, .ty-still .fa-dust, .ty-still .fa-emerg, .ty-still .fa-hotdock,
+.ty-still .fa-hot, .ty-still .fa-foup, .ty-still .fa-cab { animation: none !important; transition: none !important; }
+.ty-still .fa-dust { opacity: .7; } .ty-still .fa-smoke i:first-child { opacity: .7; animation: none; transform: translateY(-6px); }
+.ty-still .fa-darkwrap, .ty-still .fa-emerg { transition: none; }
+.ty-paused .fa-m * { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) {
+  .fa-m *, .fa-fail, .fa-smoke i, .fa-dust, .fa-emerg, .fa-hotdock, .fa-hot, .fa-foup, .fa-cab { animation: none !important; transition: none !important; }
+  .fa-darkwrap { transition: none; }
+}
+
+/* 環境音控制 */
+.fa-amb { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ty-mut); min-height: 44px; }
+.fa-amb input[type=range] { width: 96px; accent-color: var(--ty-acc); min-height: 44px; }
+
+/* FOUP 移動：減少動態時瞬移 */
+.ty-still .ty-lot.is-live { transition: none; }
+@media (prefers-reduced-motion: reduce) { .ty-lot.is-live { transition: none; } }
+.ty-line[data-mode="v"] .fa-txt { line-height: 1.22; }
+.ty-line[data-mode="v"] .ty-slot { overflow: visible; }

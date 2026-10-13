@@ -57,7 +57,7 @@ export function mountHud(root) {
   bus.on('tick', render);
   bus.on('clock:changed', renderClock);
   bus.on('day', d => toast(`第 ${d.day} 日結算：維運 -${money(d.maint)}，倉儲 -${money(d.hold)}。庫存要自己到產線頁賣出！`));
-  bus.on('toast', m => toast(m));
+  bus.on('toast', m => { if (!window.EmpireNpc?.claimToast?.(m)) toast(m); }); // NPC 若接手轉述就不重複顯示
   bus.on('fab:unlocked', ({ fabId }) => toast(`${bal.fabs[fabId].zh}（${bal.fabs[fabId].node}）開通了！`));
   render();
 
@@ -80,6 +80,10 @@ function pump() {
   const d = Ev.describeEvent(s, bal, fabId);
   showing = true;
   Clock.lock();
+  // NPC 對話框接手事件（選項與知識卡都在對話框內）；沒有 NPC 模組時退回原本的彈窗
+  if (window.EmpireNpc?.eventDialog?.({ fabId, d, bal,
+    choose: id => Ev.chooseOption(S.getState(), bal, fabId, id, S.spend),
+    done: () => { showing = false; Clock.unlock(); S.commit(); pump(); } })) { S.markFactSeen(d.factId); return; }
   const dlg = openDialog({
     title: `${bal.fabs[fabId].zh}：${d.title}`, kind: 'modal', dismissible: false, label: d.title,
     onClose: () => { showing = false; Clock.unlock(); S.commit(); pump(); }
@@ -125,6 +129,7 @@ function openMenu() {
   dlg.body.append(
     notice && el('p', { class: 'ty-err', text: notice }),
     el('label', { class: 'ty-check', for: 'ty-rm' }, motion, ' 減少動態（Lot 直接跳格）'),
+    window.EmpireNpc?.settingControl && el('div', { class: 'ty-choices' }, window.EmpireNpc.settingControl('ty-btn')),
     el('div', { class: 'ty-choices' },
       el('button', { class: 'ty-btn', text: '匯出存檔', onclick: () => {
         const url = URL.createObjectURL(new Blob([S.exportJson()], { type: 'application/json' }));

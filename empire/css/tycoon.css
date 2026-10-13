@@ -1,3 +1,4 @@
+@import url("fab-art.css");
 /* 經營層樣式：全部選擇器以 .ty- 為前綴 */
 :root {
   --ty-bg: var(--we-bg, #0f1623); --ty-panel: var(--we-panel, #182236); --ty-panel2: var(--we-panel2, #1f2c45); --ty-line: var(--we-line, #2c3b5a);
@@ -50,7 +51,7 @@ body.ty-body { margin: 0; padding: 0 16px 48px; overscroll-behavior: contain; to
 .ty-kpi--good .ty-kpi-v { color: var(--ty-good); } .ty-kpi--bad .ty-kpi-v { color: var(--ty-bad); }
 
 /* line */
-.ty-line { position: relative; margin: 12px 0; background: var(--ty-panel); border-radius: 12px; padding: 8px; overflow: hidden; }
+.ty-line { position: relative; margin: 12px 0; border-radius: 12px; padding: 8px; overflow: hidden; } /* 背景（地板）見 fab-art.css */
 .ty-cells { display: flex; }
 .ty-cellwrap { flex: 0 0 var(--cell); display: block; }
 .ty-slot, .ty-exit { box-sizing: border-box; width: calc(var(--cell) - 8px); margin: 34px 4px 0; min-height: 64px; border: 1px solid var(--ty-line); border-radius: 10px; background: var(--ty-panel2); color: var(--ty-fg); font: inherit; text-align: center; padding: 4px; display: flex; flex-direction: column; justify-content: center; cursor: pointer; }
@@ -60,14 +61,7 @@ body.ty-body { margin: 0; padding: 0 16px 48px; overscroll-behavior: contain; to
 .ty-slot.is-empty { border: 2px dashed var(--ty-warn); }
 .ty-slot.is-busy { border-color: var(--ty-acc); box-shadow: 0 0 0 1px var(--ty-acc) inset; }
 .ty-slot.is-bad { border-color: var(--ty-bad); background: #3a1d24; }
-.ty-lots { position: absolute; left: 8px; top: 8px; right: 8px; bottom: 8px; pointer-events: none; }
-.ty-lot { position: absolute; left: -13px; top: 4px; width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #cfe6ff, #4aa8ff 60%, #2467a8); color: #04101f; font-size: 10px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 1px 4px rgba(0,0,0,.5); will-change: transform; animation: ty-bob 1.2s ease-in-out infinite; }
-.ty-lot.is-live { transition: transform var(--ty-tick, 250ms) linear, opacity .3s; }
-.ty-lot--out { opacity: .2; } .ty-lot--scrap { background: var(--ty-bad); opacity: 0; transition: opacity .4s; }
-.ty-paused .ty-lot { animation-play-state: paused; }
-@keyframes ty-bob { 50% { filter: brightness(1.25); } }
-.ty-still .ty-lot { animation: none; } .ty-still .ty-lot.is-live { transition: none; }
-@media (prefers-reduced-motion: reduce) { .ty-lot { animation: none; } .ty-lot.is-live { transition: none; } }
+.ty-lots { position: absolute; left: 8px; top: 8px; right: 8px; bottom: 8px; pointer-events: none; } /* 天車軌道層；FOUP 樣式見 fab-art.css */
 
 /* 窄螢幕：垂直蛇形，每槽一列 56px，Lot 沿 y 軸移動 */
 .ty-line[data-mode="v"] .ty-cells { flex-direction: column; }
@@ -76,9 +70,6 @@ body.ty-body { margin: 0; padding: 0 16px 48px; overscroll-behavior: contain; to
 .ty-line[data-mode="v"] .ty-slot, .ty-line[data-mode="v"] .ty-exit { margin: 2px 0; width: auto; height: 52px; min-height: 44px; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; text-align: left; gap: 0 8px; padding: 2px 10px; }
 .ty-line[data-mode="v"] .ty-exit { justify-content: center; }
 .ty-line[data-mode="v"] .ty-lots { right: auto; width: 36px; }
-.ty-line[data-mode="v"] .ty-lot { left: 5px; top: -13px; }
-.ty-line[data-mode="h"] .ty-lot { top: 4px; }
-.ty-line[data-mode="h"] .ty-lots { height: 34px; bottom: auto; }
 
 .ty-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 

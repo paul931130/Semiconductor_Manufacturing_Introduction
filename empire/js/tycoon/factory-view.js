@@ -1,4 +1,5 @@
-// 廠房俯視圖：機台槽位（買／升級／賣）、Lot 沿產線動畫。寬螢幕橫向、窄螢幕（<560px）垂直排列。
+// 廠房俯視圖（Q版寫實無塵室）：機台槽位（買／升級／賣）、FOUP 沿天車軌道移動、事件視覺與環境音。寬螢幕橫向、窄螢幕（<560px）垂直排列。
+// 效能：機台 SVG 依 (種類, 等級) 快取字串；槽位節點以簽章比對重用；每 tick 只切換 class 與 FOUP transform，不重建 DOM。
 const enName = (eq) => (eq && eq.en && eq.en !== 'TODO' ? eq.en : '');
 import { bus } from '../shared/bus.js';
 import * as S from './state.js';
@@ -10,14 +11,20 @@ import { getEquipment, getProcess } from '../shared/content.js';
 import { openUnlockSheet } from './unlock-view.js';
 import { mountMarket } from './market-view.js';
 import { el, fill, openDialog, toast, money, pct, fmt } from './ui.js';
+import { machineSVG, dockSVG, ghostSVG } from '../fab-art/machines.js';
+import * as Audio from '../audio.js';
 
-const CELL_H = 88; // 橫向每格寬
+const CELL_H_MAX = 96, CELL_H_MIN = 62; // 橫向每格寬（依容器寬度在此範圍內縮放）
 const CELL_V = 56; // 縱向每槽高（§11：每槽一列 56 px）
 
 export function mountFactoryView(root) {
   const bal = S.getBal();
   let cur = 'f1';
   let vertical = false;
+  let cellH = 88;
+  const slotBtns = [];            // 目前畫面上各槽位按鈕（每 tick 切換忙碌 class 用）
+  const cellCache = new Map();    // 'fab:slot' → { sig, node }
+  let exitNode = null, exitSig = '', hotDock = null;
   const lotEls = new Map(); // lotId → element
   let lastShip = null;
 
@@ -25,20 +32,35 @@ export function mountFactoryView(root) {
   const head = el('div', { class: 'ty-fabhead' });
   const cells = el('div', { class: 'ty-cells' });
   const lots = el('div', { class: 'ty-lots', 'aria-hidden': 'true' });
-  const line = el('div', { class: 'ty-line' }, cells, lots);
+  // 事件特效層：微粒灰塵、停電黑幕、緊急照明
+  const dust = el('div', { class: 'fa-dustwrap', 'aria-hidden': 'true' }, Array.from({ length: 16 }, (_, i) => {
+    const d = el('i', { class: 'fa-dust' });
+    const r = k => ((i * 37 + k * 53) % 97) / 97;
+    d.style.cssText = `--x:${(r(1) * 100).toFixed(1)}%;--y:${(r(2) * 100).toFixed(1)}%;--s:${(3 + r(3) * 3).toFixed(1)}px;--t:${(5 + r(4) * 5).toFixed(1)}s;--dl:${(-r(5) * 8).toFixed(1)}s;--dx:${((r(6) - .3) * 90).toFixed(0)}px;--dy:${((r(7) - .5) * 60).toFixed(0)}px`;
+    return d;
+  }));
+  const fx = [dust, el('div', { class: 'fa-darkwrap', 'aria-hidden': 'true' }), ...[0, 1, 2].map(() => el('span', { class: 'fa-emerg', 'aria-hidden': 'true' }))];
+  const line = el('div', { class: 'ty-line' }, cells, lots, ...fx);
   const actions = el('div', { class: 'ty-actions' });
-  const wrap = el('section', { class: 'ty-fab', 'aria-label': '晶圓廠產線' }, tabs, head, line, actions);
+  // 環境音音量（與 SFX 分開；元素固定不重建，拖曳時不會被打斷）
+  const ambSlider = el('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(Audio.ambience.getVolume() * 100)), 'aria-label': '環境音音量（無塵室風扇與機台聲）' });
+  ambSlider.addEventListener('input', () => Audio.ambience.setVolume(ambSlider.value / 100));
+  const ambBox = el('div', { class: 'fa-amb' }, el('span', { text: '環境音' }), ambSlider);
+  const wrap = el('section', { class: 'ty-fab', 'aria-label': '晶圓廠產線' }, tabs, head, line, actions, ambBox);
   root.append(wrap);
   const market = mountMarket(wrap, () => cur);
 
   // ---------- 版面模式 ----------
+  function computeMode() {
+    const n = S.getState().fabs[cur].slots.length + 1, w = root.clientWidth;
+    vertical = w < 560 || (w - 18) / n < CELL_H_MIN;
+    cellH = vertical ? CELL_V : Math.max(CELL_H_MIN, Math.min(CELL_H_MAX, Math.floor((w - 18) / n)));
+    line.dataset.mode = vertical ? 'v' : 'h';
+  }
   const applyMode = () => {
-    const v = root.clientWidth < 560;
-    if (v !== vertical || !line.dataset.mode) {
-      vertical = v;
-      line.dataset.mode = v ? 'v' : 'h';
-      renderLine();
-    }
+    const before = vertical + '|' + cellH;
+    computeMode();
+    if (before !== vertical + '|' + cellH) renderLine();
   };
   new ResizeObserver(applyMode).observe(root);
 
@@ -113,44 +135,72 @@ export function mountFactoryView(root) {
 
   // ---------- 產線 ----------
   function renderLine() {
+    computeMode();
     const s = S.getState(), fab = s.fabs[cur];
     const mods = fabMods(cur);
     const Sr = S.starRatio(cur);
     const bad = failedSlot(fab);
-    const cell = vertical ? CELL_V : CELL_H;
+    const cell = vertical ? CELL_V : cellH;
     line.style.setProperty('--cell', cell + 'px');
-    const busySlots = new Set(fab.lots.map(l => l.slot));
     const stNow = fabStatsNow(cur);
     const bnSet = stNow.complete ? stNow.bottlenecks : [];
     const weak = stNow.complete ? weakestSlot() : -1;
+    for (const k of [...cellCache.keys()]) if (!k.startsWith(cur + ':')) cellCache.delete(k);
     const out = [];
+    slotBtns.length = 0;
     fab.slots.forEach((slot, i) => {
-      const cat = bal.categories[bal.fabs[cur].slots[i]];
-      let body;
-      if (!slot) {
-        body = [el('div', { class: 'ty-slot-cat', text: cat }), el('div', { class: 'ty-slot-empty', text: '缺機台' }), el('div', { class: 'ty-slot-sub', text: '點選購買' })];
-      } else {
+      const kind = bal.fabs[cur].slots[i];
+      const cat = bal.categories[kind];
+      let name = '', sub = '', art;
+      if (!slot) { art = ghostSVG(); }
+      else {
         const eq = getEquipment(slot.equip);
         const d = Eco.slotDefect(bal, cur, slot.equip, slot.level, Sr, mods.eventDef);
         const y = 1 - Math.min(d, bal.yield.dMax);
         const p = Eco.slotHours(bal, slot.equip, slot.level) * mods.pMul;
-        body = [
-          el('div', { class: 'ty-slot-cat', text: cat }),
-          el('div', { class: 'ty-slot-name', text: `${eq ? eq.zh : slot.equip} L${slot.level}` }),
-          el('div', { class: 'ty-slot-sub', text: i === bad ? '故障停擺' : `${p.toFixed(1)} 小時 · 良率 ${pct(y, 1)}` }),
-          bnSet.includes(i) && el('span', { class: 'ty-tag ty-tag--bn', text: bnSet.length > 1 ? '並列瓶頸' : '瓶頸' }),
-          i === weak && !bnSet.includes(i) && el('span', { class: 'ty-tag ty-tag--yl', text: '良率最低' })
-        ];
+        name = `${eq ? eq.zh : slot.equip} L${slot.level}`;
+        sub = i === bad ? '故障停擺' : `${p.toFixed(1)} 小時 · 良率 ${pct(y, 1)}`;
+        art = machineSVG(slot.equip, slot.level);
       }
-      const cls = 'ty-slot' + (!slot ? ' is-empty' : '') + (i === bad ? ' is-bad' : '') + (busySlots.has(i) ? ' is-busy' : '') + (bnSet.includes(i) ? ' is-bottleneck' : '');
-      out.push(el('div', { class: 'ty-cellwrap' },
-        vertical && el('div', { class: 'ty-lane', 'aria-hidden': 'true' }),
-        el('button', { class: cls, 'data-tut': 'slot-' + (i + 1), 'aria-label': slotLabel(i, slot, cat, i === bad) + (bnSet.includes(i) ? '，瓶頸' : ''),
-          onclick: () => openSlotSheet(i) }, body)));
+      const isBn = bnSet.includes(i), isWeak = i === weak && !isBn;
+      const label = slotLabel(i, slot, cat, i === bad) + (isBn ? '，瓶頸' : '');
+      const litho = kind === 'lithography';
+      const sig = JSON.stringify([vertical, slot ? [slot.equip, slot.level] : 0, cat, name, sub, i === bad, isBn ? bnSet.length : 0, isWeak, litho, label]);
+      const key = cur + ':' + i;
+      let ent = cellCache.get(key);
+      if (!ent || ent.sig !== sig) {
+        const body = !slot
+          ? [el('div', { class: 'ty-slot-cat', text: cat }), el('div', { class: 'ty-slot-empty', text: '缺機台' }), el('div', { class: 'ty-slot-sub', text: '點選購買' })]
+          : [el('div', { class: 'ty-slot-cat', text: cat }), el('div', { class: 'ty-slot-name', text: name }), el('div', { class: 'ty-slot-sub', text: sub })];
+        const art$ = el('span', { class: 'fa-art', 'aria-hidden': 'true' });
+        art$.innerHTML = art; // 內容為本模組產生的靜態 SVG 字串（無使用者輸入）
+        const btn = el('button', { class: 'ty-slot' + (!slot ? ' is-empty' : '') + (i === bad ? ' is-bad' : '') + (isBn ? ' is-bottleneck' : ''), 'data-tut': 'slot-' + (i + 1), 'aria-label': label,
+          onclick: () => openSlotSheet(i) },
+          art$, el('span', { class: 'fa-txt' }, body),
+          isBn && el('span', { class: 'ty-tag ty-tag--bn', text: bnSet.length > 1 ? '並列瓶頸' : '瓶頸' }),
+          isWeak && el('span', { class: 'ty-tag ty-tag--yl', text: '良率最低' }),
+          i === bad && el('span', { class: 'fa-fail', 'aria-hidden': 'true' }),
+          i === bad && el('span', { class: 'fa-smoke', 'aria-hidden': 'true' }, el('i'), el('i'), el('i')));
+        const node = el('div', { class: 'ty-cellwrap' + (litho ? ' ty-cellwrap--litho' : '') },
+          vertical && el('div', { class: 'ty-lane', 'aria-hidden': 'true' }), btn,
+          litho && el('span', { class: 'fa-baylabel', text: '黃光區', 'aria-hidden': 'true' }));
+        ent = { sig, node, btn };
+        cellCache.set(key, ent);
+      }
+      slotBtns[i] = ent.btn;
+      out.push(ent.node);
     });
-    out.push(el('div', { class: 'ty-cellwrap ty-cellwrap--exit' },
-      vertical && el('div', { class: 'ty-lane', 'aria-hidden': 'true' }),
-      el('div', { class: 'ty-exit', text: '出貨' })));
+    const esig = String(vertical);
+    if (!exitNode || exitSig !== esig) {
+      exitSig = esig;
+      const art$ = el('span', { class: 'fa-art', 'aria-hidden': 'true' });
+      art$.innerHTML = dockSVG();
+      hotDock = el('span', { class: 'fa-hotdock', text: '急件待接單', hidden: true });
+      exitNode = el('div', { class: 'ty-cellwrap ty-cellwrap--exit' },
+        vertical && el('div', { class: 'ty-lane', 'aria-hidden': 'true' }),
+        el('div', { class: 'ty-exit' }, art$, el('span', { class: 'fa-txt' }, el('span', { text: '出貨' }), hotDock)));
+    }
+    out.push(exitNode);
     fill(cells, ...out);
     cells.style.setProperty('--n', String(out.length));
     updateLots(true);
@@ -161,11 +211,38 @@ export function mountFactoryView(root) {
     return `槽位 ${i + 1}，${cat}，${eq ? eq.zh : slot.equip} 等級 ${slot.level}${bad ? '，故障' : ''}，點選管理`;
   }
 
-  // ---------- Lot 動畫 ----------
+  // ---------- 每 tick 輕量同步：忙碌燈號、事件特效、環境音 ----------
+  function syncState() {
+    const fab = S.getState().fabs[cur];
+    const evId = fab.event?.id;
+    const outage = evId === 'power_outage';
+    const halted = fab.halt > 0 || outage;
+    const busy = new Set(fab.lots.map(l => l.slot));
+    const bad = failedSlot(fab);
+    slotBtns.forEach((b, i) => {
+      if (!b) return;
+      const on = busy.has(i) && !halted && i !== bad;
+      b.classList.toggle('is-busy', on);
+      b.classList.toggle('is-idle', !!fab.slots[i] && !on && i !== bad);
+    });
+    line.classList.toggle('fa-outage', outage);
+    line.classList.toggle('fa-halt', halted);
+    line.classList.toggle('fa-particle', evId === 'particle');
+    if (hotDock) hotDock.hidden = !(evId === 'rush_order' && !fab.event.extra.accepted);
+    // 環境音：只在產線畫面可見、時鐘運轉時發聲；每個忙碌機台一條嗡聲
+    const visible = !document.hidden && !root.closest('[hidden]');
+    Audio.ambience.set({ on: visible && Clock.isRunning(), busy: slotBtns.map(b => !!b && b.classList.contains('is-busy')), outage });
+  }
+
+  // ---------- FOUP 動畫 ----------
+  // 在機台上停留加工（進度 < 0.6），後 40% 沿天車軌道移到下一台
+  const travel = p => (p < 0.6 ? 0 : Math.min(1, (p - 0.6) / 0.4));
   function lotPos(c) {
-    return vertical ? `translate(0px, ${c * CELL_V}px)` : `translate(${c * CELL_H}px, 0px)`;
+    return vertical ? `translate(0px, ${c * CELL_V}px)` : `translate(${c * cellH}px, 0px)`;
   }
   function clearLots() { for (const e of lotEls.values()) e.remove(); lotEls.clear(); }
+  const newFoup = (lot) => el('div', { class: 'ty-lot', title: `Lot #${lot.id}` },
+    el('span', { class: 'fa-cab' }), el('span', { class: 'fa-foup', text: String(lot.id % 100) }), el('span', { class: 'fa-hot', text: 'HOT' }));
   function updateLots(snap) {
     const s = S.getState(), fab = s.fabs[cur];
     const ms = Clock.tickMs();
@@ -173,12 +250,17 @@ export function mountFactoryView(root) {
     root.classList.toggle('ty-still', !!s.settings.reduceMotion);
     root.classList.toggle('ty-paused', !Clock.isRunning());
     const alive = new Set();
+    const ev = fab.event;
+    const hotWanted = ev?.id === 'rush_order' && ev.extra.accepted && ev.extra.pending;
+    let lead = null;
     for (const lot of fab.lots) {
       alive.add(lot.id);
-      const c = lot.slot + 0.5 + lot.progress;
+      if (hotWanted && (!lead || lot.slot + lot.progress > lead.slot + lead.progress)) lead = lot;
+      const tr = travel(lot.progress);
+      const c = lot.slot + 0.5 + tr;
       let e = lotEls.get(lot.id);
       if (!e) {
-        e = el('div', { class: 'ty-lot', title: `Lot #${lot.id}`, text: String(lot.id % 100) });
+        e = newFoup(lot);
         e.style.transform = lotPos(c);
         lots.append(e); lotEls.set(lot.id, e);
         void e.offsetWidth;
@@ -188,15 +270,22 @@ export function mountFactoryView(root) {
         e.style.transform = lotPos(c);
         if (snap) { void e.offsetWidth; e.classList.add('is-live'); }
       }
+      const moving = tr > 0;
+      if (!snap && moving && e.dataset.mv !== '1' && !s.settings.reduceMotion) Audio.ambience.whoosh(); // 天車開始移動
+      e.dataset.mv = moving ? '1' : '0';
+      e.classList.toggle('is-down', !moving);
     }
+    for (const [id, e] of lotEls) e.classList.toggle('is-hot', !!lead && lead.id === id);
     for (const [id, e] of [...lotEls]) {
       if (alive.has(id) || e.classList.contains('ty-lot--out')) continue;
       e.classList.add('ty-lot--scrap'); lotEls.delete(id);
       setTimeout(() => e.remove(), 500);
     }
+    syncState();
   }
   bus.on('lot:shipped', ({ fabId, lotId, good, rush }) => {
     lastShip = { fabId, good, rush };
+    Audio.sfx.ship();
     if (fabId !== cur) return;
     const e = lotEls.get(lotId);
     if (!e) return;
@@ -336,9 +425,9 @@ export function mountFactoryView(root) {
   bus.on('tick', () => { updateLots(false); if (S.getState().clock.tick % 2 === 0) renderHead(); });
   bus.on('day', () => { renderHead(); renderActions(); renderLine(); });
   bus.on('event:end', () => { renderHead(); renderActions(); renderLine(); });
-  bus.on('clock:changed', () => { root.classList.toggle('ty-paused', !Clock.isRunning()); });
-  vertical = root.clientWidth < 560;
-  line.dataset.mode = vertical ? 'v' : 'h';
+  bus.on('clock:changed', () => { root.classList.toggle('ty-paused', !Clock.isRunning()); syncState(); });
+  bus.on('event:trigger', () => { renderLine(); renderActions(); });
+  computeMode();
   renderAll();
   return { setFab(id) { cur = id; clearLots(); renderAll(); }, getFab: () => cur };
 }
