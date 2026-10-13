@@ -57,7 +57,7 @@
 .ty-line[data-mode="v"] .fa-cab { display: none; }
 .ty-line[data-mode="v"] .fa-foup { top: 1px; left: 0; }
 .ty-line[data-mode="v"] .ty-lot.is-down .fa-foup { transform: translateX(5px); }
-.ty-line[data-mode="v"] .fa-hot { top: -4px; left: 24px; width: 30px; }
+.ty-line[data-mode="v"] .fa-hot { top: 22px; left: -2px; width: 26px; }
 .ty-line[data-mode="h"] .ty-lots { height: 34px; bottom: auto; }
 @keyframes fa-flash { 50% { opacity: .25; } }
 
@@ -190,6 +190,18 @@
 @media (prefers-reduced-motion: reduce) { .ty-lot.is-live { transition: none; } }
 .ty-line[data-mode="v"] .fa-txt { line-height: 1.22; }
 .ty-line[data-mode="v"] .ty-slot { overflow: visible; }
+
+/* 機台狀態牌與金屬機殼，使用即時加工狀態而非裝飾性數值。 */
+.ty-slot, .ty-exit { background: linear-gradient(135deg, rgba(62, 77, 95, .92), rgba(23, 33, 47, .96)); box-shadow: inset 0 1px rgba(235, 244, 255, .18), 0 3px 6px rgba(0, 0, 0, .25); }
+.fa-art { filter: drop-shadow(1px 3px 2px rgba(0, 0, 0, .28)); }
+.fa-toolstate { display: block; font-size: 10px; color: #bdd0dc; letter-spacing: .03em; border-top: 1px solid rgba(255, 255, 255, .12); margin-top: 4px; padding-top: 3px; }
+.is-busy .fa-toolstate { color: #7cf0b0; }
+.is-waiting .fa-toolstate { color: #ffdb81; }
+.is-bad .fa-toolstate { color: #ffb3b3; }
+.ty-line[data-mode="v"] .ty-cellwrap { grid-template-columns: 44px 1fr; }
+.ty-line[data-mode="v"] .ty-slot { position: relative; padding-bottom: 15px; }
+.ty-line[data-mode="v"] .fa-toolstate { position: absolute; bottom: 1px; right: 10px; margin: 0; border: 0; padding: 0; font-size: 9px; }
+.ty-line[data-mode="v"] .ty-slot .fa-art { max-width: 44px; }
 
 /* ---------- v3 產線狀態：暫停／封存＝燈光調暗（沿用 .fa-halt 熄燈＋天車停擺）；只做完在製品＝照常運轉，只是不再進新料 ---------- */
 .fa-modetag { position: absolute; top: 6px; right: 8px; z-index: 9; pointer-events: none; font-size: 12px; font-weight: 700; letter-spacing: .08em; padding: 2px 10px;

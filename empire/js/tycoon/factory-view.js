@@ -11,6 +11,7 @@ import { getEquipment, getProcess } from '../shared/content.js';
 import { openUnlockSheet } from './unlock-view.js';
 import { mountMarket } from './market-view.js';
 import { mountOps } from './ops-view.js';
+import { operatingAdvice } from './advisor.js';
 import { el, fill, openDialog, toast, money, pct, fmt } from './ui.js';
 import { machineSVG, dockSVG, ghostSVG } from '../fab-art/machines.js';
 import * as Audio from '../audio.js';
@@ -44,12 +45,33 @@ export function mountFactoryView(root) {
   const fx = [dust, el('div', { class: 'fa-darkwrap', 'aria-hidden': 'true' }), modeTag, ...[0, 1, 2].map(() => el('span', { class: 'fa-emerg', 'aria-hidden': 'true' }))];
   const line = el('div', { class: 'ty-line' }, cells, lots, ...fx);
   const actions = el('div', { class: 'ty-actions' });
+  const advice = el('section', { class: 'ty-advice', 'aria-label': '值班建議' });
+  const adviceTitle = el('b');
+  const adviceText = el('p', { class: 'ty-muted' });
+  const adviceGoal = el('p', { class: 'ty-muted' });
+  const adviceBtn = el('button', { class: 'ty-btn ty-btn--primary', type: 'button' });
+  advice.append(adviceTitle, adviceText, adviceGoal, adviceBtn);
+  let currentAdvice;
+  adviceBtn.onclick = () => {
+    const a = currentAdvice;
+    if (!a) return;
+    if (a.action === 'slot') openSlotSheet(a.slot);
+    else if (a.action === 'unlock' && a.goal) openUnlockSheet(a.goal.id);
+    else if (a.action === 'sell') {
+      const r = S.sellInventory(cur, Math.min(a.sellQty, S.sellRoom(cur)));
+      toast(r.ok ? `賣出 ${r.n} 片，入帳 ${money(r.revenue)}` : r.reason);
+    } else {
+      const target = a.action === 'ops' ? opsHost : a.action === 'event' ? actions : wrap.querySelector('.ty-market');
+      target?.scrollIntoView({ block: 'start', behavior: 'auto' });
+      target?.querySelector('button:not(:disabled)')?.focus({ preventScroll: true });
+    }
+  };
   // 環境音音量（與 SFX 分開；元素固定不重建，拖曳時不會被打斷）
   const ambSlider = el('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(Audio.ambience.getVolume() * 100)), 'aria-label': '環境音音量（無塵室風扇與機台聲）' });
   ambSlider.addEventListener('input', () => Audio.ambience.setVolume(ambSlider.value / 100));
   const ambBox = el('div', { class: 'fa-amb' }, el('span', { text: '環境音' }), ambSlider);
   const opsHost = el('div', { class: 'ty-ops-host' });
-  const wrap = el('section', { class: 'ty-fab', 'aria-label': '晶圓廠產線' }, tabs, head, line, actions, opsHost, ambBox);
+  const wrap = el('section', { class: 'ty-fab', 'aria-label': '晶圓廠產線' }, tabs, advice, head, line, actions, opsHost, ambBox);
   root.append(wrap);
   mountOps(opsHost, () => cur);
   const market = mountMarket(wrap, () => cur);
@@ -97,7 +119,13 @@ export function mountFactoryView(root) {
     const mode = Eco.modeOf(fab);
     const Y = st.Y;
     const profitable = Y >= st.breakEven;
-    const proj = Eco.lineProjection(bal, cur, fab, S.starRatio(cur), fabMods(cur), s.res.rep, 1, 1);
+    const proj = Eco.lineProjection(bal, cur, fab, S.starRatio(cur), fabMods(cur), s.res.rep, s.res.priceWalk, s.res.demandIdx);
+    currentAdvice = operatingAdvice(bal, s, cur, st, proj);
+    const a = currentAdvice;
+    adviceTitle.textContent = `值班建議 · ${a.title}`;
+    adviceText.textContent = a.text;
+    adviceGoal.textContent = a.goal ? `下一座 ${bal.fabs[a.goal.id].zh}：解謎 ${a.goal.unlock.puzzle.have}/${a.goal.unlock.puzzle.need} · 聲望 ${s.res.rep.toFixed(0)}/${a.goal.unlock.rep.need} · 建議預算 ${money(a.goal.budget.total)}（尚差 ${money(Math.max(0, a.goal.budget.total - s.res.money))}）` : '五座廠已開通；持續改善良率、履約與現金周轉。';
+    adviceBtn.textContent = { slot: '安裝缺少的機台', unlock: '查看下一座廠', sell: `賣多餘成品（${a.sellQty} 片）`, ops: '查看營運控制', event: '處理事件', market: '查看市場與訂單' }[a.action];
     const age = s.res.invAge[cur] || 0;
     fill(head, 
       el('div', { class: 'ty-headline' },
@@ -106,11 +134,11 @@ export function mountFactoryView(root) {
         fab.ramp > 0 && el('span', { class: 'ty-badge ty-badge--warn', text: `暖機中 ${fab.ramp} 小時` }),
         evText && el('span', { class: 'ty-badge ty-badge--warn', text: evText })),
       el('div', { class: 'ty-kpis' },
-        kpi('線良率 Y', pct(Y), profitable ? 'good' : 'bad', `Y = Π(1−dᵢ)×E，盈虧平衡 ${pct(st.breakEven, 0)}`),
+        kpi('線良率 Y', st.complete ? pct(Y) : '—', st.complete ? (profitable ? 'good' : 'bad') : '', st.complete ? `Y = Π(1−dᵢ)×E，盈虧平衡 ${pct(st.breakEven, 0)}` : '機台未齊，尚無完整產線良率'),
         kpi('產能', st.interval ? `${Math.round(st.wafersPerDay)} 片/日` : '—', '', st.interval ? `每 ${st.interval.toFixed(1)} 小時投 1 Lot` : '產線不通'),
         kpi('今日單價', money(st.price), '', `行情 ×${s.res.priceWalk.toFixed(2)}　成本 ${money(f.cost)}/片`),
         kpi('庫存', `${s.res.inv[cur]} 片`, age >= 3 ? 'bad' : '', `庫齡 ${age.toFixed(1)} 日　賣出才入帳`),
-        kpi('預估日利潤', st.complete && mode === 'run' ? `${proj.profitPerDay >= 0 ? '+' : '−'}${money(Math.abs(proj.profitPerDay))}` : '—', proj.profitPerDay >= 0 && mode === 'run' ? 'good' : 'bad', mode === 'run' ? `標準行情；維運 ${money(f.maintenance)}/日` : `${bal.mode.labels[mode]}中；維運 ${money(Eco.fabUpkeep(bal, cur, mode))}/日`),
+        kpi('預估日利潤', st.complete && mode === 'run' ? `${proj.profitPerDay >= 0 ? '+' : '−'}${money(Math.abs(proj.profitPerDay))}` : '—', proj.profitPerDay >= 0 && mode === 'run' ? 'good' : 'bad', mode === 'run' ? `目前行情；估算不含庫齡、倉儲、利息與訂單；維運 ${money(f.maintenance)}/日` : `${bal.mode.labels[mode]}中；維運 ${money(Eco.fabUpkeep(bal, cur, mode))}/日`),
         kpi('解謎星數 S', pct(S.starRatio(cur), 0), '', '缺陷率 ×(1−0.5S)')),
       s.res.inv[cur] >= bal.startHaltInv && el('p', { class: 'ty-warn', role: 'status', text: `庫存已達 ${bal.startHaltInv} 片，產線暫停投片。賣出庫存後才會繼續生產。` }),
       mode === 'run' && st.complete && s.res.money < Eco.lotCost(bal, cur) && s.res.inv[cur] > 0
@@ -186,6 +214,7 @@ export function mountFactoryView(root) {
         const btn = el('button', { class: 'ty-slot' + (!slot ? ' is-empty' : '') + (i === bad ? ' is-bad' : '') + (isBn ? ' is-bottleneck' : ''), 'data-tut': 'slot-' + (i + 1), 'aria-label': label,
           onclick: () => openSlotSheet(i) },
           art$, el('span', { class: 'fa-txt' }, body),
+          el('span', { class: 'fa-toolstate', text: slot ? '待機' : '待安裝' }),
           isBn && el('span', { class: 'ty-tag ty-tag--bn', text: bnSet.length > 1 ? '並列瓶頸' : '瓶頸' }),
           isWeak && el('span', { class: 'ty-tag ty-tag--yl', text: '良率最低' }),
           i === bad && el('span', { class: 'fa-fail', 'aria-hidden': 'true' }),
@@ -232,9 +261,14 @@ export function mountFactoryView(root) {
     const bad = failedSlot(fab);
     slotBtns.forEach((b, i) => {
       if (!b) return;
-      const on = busy.has(i) && !halted && i !== bad;
+      const lot = fab.lots.find(l => l.slot === i);
+      const waiting = !!lot && lot.progress >= 1 && i < fab.slots.length - 1;
+      const on = busy.has(i) && !halted && i !== bad && !waiting;
       b.classList.toggle('is-busy', on);
       b.classList.toggle('is-idle', !!fab.slots[i] && !on && i !== bad);
+      b.classList.toggle('is-waiting', waiting && !halted && i !== bad);
+      const stateLabel = b.querySelector('.fa-toolstate');
+      if (stateLabel) stateLabel.textContent = !fab.slots[i] ? '待安裝' : i === bad ? '故障 · HOLD' : halted ? '停機 · HOLD' : waiting ? '完成 · 等下站' : on ? `加工 ${Math.min(99, Math.floor(lot.progress * 100))}%` : '待機 · READY';
     });
     line.classList.toggle('fa-outage', outage);
     line.classList.toggle('fa-halt', halted);
@@ -390,6 +424,8 @@ export function mountFactoryView(root) {
       const body = [];
       if (!slot) {
         body.push(el('p', { class: 'ty-muted', text: '選擇要放入的機台（價格 = 基價 × 廠倍率）：' }));
+        const budget = Eco.startupBudget(bal, cur);
+        body.push(el('p', { class: 'ty-budget', text: `機台補齊後建議保留 ${money(budget.working)} 週轉金，讓首批成品完成後再出售。` }));
         for (const id of Eco.allowedEquip(bal, cur, i)) {
           const b = bal.equipment[id], eq = getEquipment(id), price = Eco.equipPrice(bal, cur, id);
           const d = Eco.slotDefect(bal, cur, id, 1, Sr, mods.eventDef);
@@ -409,6 +445,7 @@ export function mountFactoryView(root) {
           eq && el('p', { class: 'ty-muted', text: eq.purpose }),
           el('p', { class: 'ty-muted', text: `處理時間 ${(Eco.slotHours(bal, slot.equip, slot.level) * mods.pMul).toFixed(2)} 小時　缺陷率 d = ${pct(d, 2)}　單槽良率 ${pct(1 - Math.min(d, 0.5), 2)}` }),
           up != null && upgradeTable(i),
+          up != null && s.res.money - up < Eco.guardDefault(bal, cur) && el('p', { class: 'ty-warn', text: '升級後現金會低於一批投片與每日維運的建議保留額，請先賣出成品或備妥週轉金。' }),
           el('div', { class: 'ty-choices' },
             el('button', { class: 'ty-btn ty-btn--primary', disabled: up == null || s.res.money < up, 'data-tut': 'btn-upgrade',
               text: up == null ? '已達最高等級' : `升級 ${money(up)}`,

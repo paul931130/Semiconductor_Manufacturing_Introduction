@@ -72,6 +72,10 @@ body.ty-body { margin: 0; padding: 0 16px 48px; overscroll-behavior: contain; to
 .ty-line[data-mode="v"] .ty-lots { right: auto; width: 36px; }
 
 .ty-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ty-advice, .ty-budget { padding: 12px 14px; margin: 8px 0; border: 1px solid var(--ty-line); border-left: 3px solid var(--ty-gold); background: var(--ty-panel); border-radius: 10px; }
+.ty-advice > b { color: var(--ty-gold); }
+.ty-advice .ty-btn { margin-top: 6px; }
+.ty-ops-host, .ty-market, .ty-actions { scroll-margin-top: 150px; }
 
 /* dialogs */
 .ty-overlay[hidden] { display: none; }

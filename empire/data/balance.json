@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "start": { "money": 6500, "rep": 20 },
+  "start": { "money": 9500, "rep": 20 },
   "lotSize": 25,
   "invCap": 600,
   "startHaltInv": 300,

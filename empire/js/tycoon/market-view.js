@@ -13,6 +13,8 @@ export function mountMarket(root, getCur) {
   const bal = S.getBal();
   const box = el('section', { class: 'ty-market', 'aria-label': '市場與訂單' });
   root.append(box);
+  const armed = new Map();
+  let lastHTML = '';
 
   function render() {
     const s = S.getState(), r = s.res, cur = getCur(), fab = s.fabs[cur];
@@ -28,9 +30,16 @@ export function mountMarket(root, getCur) {
     const sellBtn = (label, frac, tut) => {
       const n = frac >= 1 ? room : Math.min(room, Math.ceil(inv * frac));
       const q = n > 0 ? S.sellQuote(cur, n) : 0;
+      const reserved = r.contracts.active.filter(c => c.fabId === cur).reduce((sum, c) => sum + c.qty, 0);
+      const key = `sell:${cur}:${tut}`;
+      const risk = n > Math.max(0, inv - reserved);
       return el('button', { class: 'ty-btn' + (frac >= 1 ? ' ty-btn--primary' : ''), disabled: n <= 0, 'data-tut': tut,
         text: n > 0 ? `${label}（${n} 片 +${money(q)}）` : label,
-        onclick: () => { const x = S.sellInventory(cur, n); if (x.ok) toast(`賣出 ${x.n} 片，入帳 ${money(x.revenue)}`); else toast(x.reason); } });
+        onclick: function () {
+          if (risk && (armed.get(key) || 0) < Date.now()) { armed.set(key, Date.now() + 6000); this.textContent = '會動用訂單保留量，6 秒內再按確認'; toast('這批庫存已保留給訂單，賣出可能影響交貨。'); return; }
+          armed.delete(key);
+          const x = S.sellInventory(cur, n); if (x.ok) toast(`賣出 ${x.n} 片，入帳 ${money(x.revenue)}`); else toast(x.reason);
+        } });
     };
 
     const body = [
@@ -47,7 +56,7 @@ export function mountMarket(root, getCur) {
         el('b', { text: `${bal.fabs[cur].zh} 庫存 ${fmt(inv)} 片` }),
         el('span', { text: `　平均庫齡 ${age.toFixed(1)} 日　新鮮度 ${pct(fresh, 0)}　倉儲 ${money(hold)}/日` }),
         el('div', { class: 'ty-muted', text: `今日已賣 ${r.soldToday[cur] || 0} 片，還能賣 ${Math.min(inv, Eco.sellRoom(D, r.soldToday[cur] || 0))} 片。庫存每放一日，售價 −${Math.round(bal.market.ageDecay * 100)}%（最低 ${Math.round(bal.market.ageFloor * 100)}%）並付倉儲費；庫存達 ${bal.startHaltInv} 片產線就暫停投片；硬上限 ${bal.invCap} 片，超出的報廢。` })),
-      el('div', { class: 'ty-choices ty-sell' }, sellBtn('賣 1/3', 1 / 3, 'btn-sell-third'), sellBtn('賣一半', 0.5, 'btn-sell-half'), sellBtn('全部賣出', 1, 'btn-sell-all'))
+      el('div', { class: 'ty-choices ty-sell' }, sellBtn('賣 1/3', 1 / 3, 'btn-sell-third'), sellBtn('賣一半', 0.5, 'btn-sell-half'), sellBtn('賣出今日可售量', 1, 'btn-sell-all'))
     ];
 
     // ---- 訂單 ----
@@ -78,7 +87,9 @@ export function mountMarket(root, getCur) {
         el('div', { class: 'ty-choices' },
           el('button', { class: 'ty-btn ty-btn--primary', text: short ? '接單（良率不足）' : '接單',
             onclick: function () {
-              if (short && !this.dataset.armed) { this.dataset.armed = '1'; this.textContent = `確定？良率目前不夠，再按一次接單`; return; }
+              const key = `offer:${o.id}`;
+              if (short && (armed.get(key) || 0) < Date.now()) { armed.set(key, Date.now() + 6000); this.textContent = '良率不足，6 秒內再按確認接單'; return; }
+              armed.delete(key);
               const x = S.acceptContract(o.id); if (!x.ok) toast(x.reason);
             } }),
           el('button', { class: 'ty-btn', text: '婉拒', onclick: () => S.declineContract(o.id) }))));
@@ -100,10 +111,13 @@ export function mountMarket(root, getCur) {
         el('div', { class: 'ty-opt-s', text: p.complete ? `${p.profitPerDay >= 0 ? '+' : '−'}${money(Math.abs(p.profitPerDay))}/日` : '產線不通' })));
     }
     body.push(row);
-    fill(box, ...body);
+    // 無內容變化時保留按鈕與焦點，避免 tick 重繪吞掉連續操作。
+    const next = el('div', {}, ...body);
+    if (next.innerHTML !== lastHTML) { lastHTML = next.innerHTML; fill(box, ...next.childNodes); }
   }
 
-  for (const e of ['state:changed', 'day', 'event:end', 'state:reset']) bus.on(e, render);
+  for (const e of ['state:changed', 'day', 'event:end']) bus.on(e, render);
+  bus.on('state:reset', () => { armed.clear(); lastHTML = ''; render(); });
   bus.on('tick', () => { if (S.getState().clock.tick % 4 === 0) render(); });
   render();
   return { render };

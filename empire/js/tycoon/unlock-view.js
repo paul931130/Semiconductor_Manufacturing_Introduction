@@ -5,7 +5,7 @@ import * as Clock from './clock.js';
 import { runPuzzleSet } from './bridge.js';
 import { getFactText } from '../shared/content.js';
 import { el, fill, openDialog, toast, money, pct } from './ui.js';
-import { levelIds } from './economy.js';
+import { levelIds, startupBudget } from './economy.js';
 
 export function openUnlockSheet(fabId) {
   const bal = S.getBal(), f = bal.fabs[fabId];
@@ -36,6 +36,7 @@ export function openUnlockSheet(fabId) {
       return `${id}：${'★'.repeat(n)}${'☆'.repeat(3 - n)}`;
     }).join('　');
     const Sratio = S.starRatio(fabId);
+    const budget = startupBudget(bal, fabId);
 
     const puzzleBtn = el('button', { class: 'ty-btn ty-btn--primary', disabled: busy, 'data-tut': 'unlock-puzzle',
       text: unlocked ? '玩製程挑戰（補星可降低缺陷率）' : '開始解謎',
@@ -56,6 +57,10 @@ export function openUnlockSheet(fabId) {
     fill(dlg.body, 
       el('p', { class: 'ty-muted', text: `每片成本 ${money(f.cost)}，基準價 ${money(f.price)}，日維運 ${money(f.maintenance)}` }),
       !unlocked && el('ul', { class: 'ty-cond' }, rows),
+      !unlocked && el('div', { class: 'ty-budget' },
+        el('b', { text: `建議開廠準備 ${money(budget.total)}` }),
+        el('p', { class: 'ty-muted', text: `解鎖 ${money(f.unlockMoney)} ＋ 基本機台 ${money(budget.kit)} ＋ 週轉金 ${money(budget.working)}（約 ${budget.lots} 批投片與兩日維運）。開廠後仍需自行購買機台。` }),
+        s.res.money < budget.total && el('p', { class: 'ty-warn', text: `目前距建議預算還差 ${money(budget.total - s.res.money)}，現在開廠可能需要貸款週轉。` })),
       el('p', { class: 'ty-stars', text: starTxt }),
       el('p', { class: 'ty-muted', text: `星數比 S = ${pct(Sratio, 0)}（全三星使缺陷率減半）` }),
       el('div', { class: 'ty-choices' }, puzzleBtn, openBtn),

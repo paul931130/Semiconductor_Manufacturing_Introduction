@@ -177,6 +177,21 @@ export const contractPayout = c => Math.round(c.qty * c.unitPrice);
 /** 單 Lot 投片成本 */
 export function lotCost(bal, fabId) { return bal.fabs[fabId].cost * bal.lotSize; }
 
+/** 開廠預算：最便宜完整產線、首批出貨前的在製批次、兩日維運。 */
+export function startupBudget(bal, fabId) {
+  const slots = bal.fabs[fabId].slots.map((_, i) => {
+    const equip = allowedEquip(bal, fabId, i).sort((a, b) => equipPrice(bal, fabId, a) - equipPrice(bal, fabId, b))[0];
+    return { equip, level: 1 };
+  });
+  const kit = slots.reduce((sum, sl) => sum + equipPrice(bal, fabId, sl.equip), 0);
+  const hours = slots.map(sl => slotHours(bal, sl.equip, 1));
+  // 離散 tick 中，每一槽至少要完整占用 ceil(hours) 個 tick。
+  const firstShipTicks = hours.reduce((sum, h) => sum + Math.ceil(h), 0);
+  const lots = Math.ceil(firstShipTicks / Math.max(...hours));
+  const working = lots * lotCost(bal, fabId) + bal.fabs[fabId].maintenance * 2;
+  return { kit, working, lots, firstShipTicks, total: bal.fabs[fabId].unlockMoney + kit + working };
+}
+
 /** 解鎖條件狀態 */
 export function unlockStatus(bal, fabId, { money, rep, stars }) {
   const f = bal.fabs[fabId];

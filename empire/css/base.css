@@ -97,3 +97,9 @@ body.we-body {
 @media (max-width: 420px) {
   .we-bar .we-btn { padding: 6px 8px; }
 }
+
+@media (max-width: 640px) {
+  .we-bar { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
+  .we-bar > * { flex: 0 0 auto; white-space: nowrap; scroll-snap-align: start; }
+  .we-brand { margin-right: 6px; }
+}

@@ -10,6 +10,7 @@ import * as S from './state.js';
 import * as Sim from './sim.js';
 import { setEventDefs } from './events.js';
 import { bus } from '../shared/bus.js';
+import { operatingAdvice } from './advisor.js';
 
 const bal = JSON.parse(readFileSync(fileURLToPath(new URL('../../data/balance.json', import.meta.url)), 'utf8'));
 let n = 0;
@@ -527,6 +528,47 @@ t('v3 存檔 v2 → v3 migration：補上狀態／暖機／自動化／貸款並
   assert.equal(S.fabMode('f2'), 'run'); assert.equal(s2.fabs.f1.auto.sellIdx, 1.1); assert.deepEqual(s2.res.loans, []);
 });
 
+
+t('值班建議優先履約、保留訂單庫存、辨識停機與擴建條件', () => {
+  const { st } = fresh3({ money: 100 });
+  const get = () => operatingAdvice(bal, st, 'f1', Sim.fabStatsNow('f1'), E.lineProjection(bal, 'f1', st.fabs.f1, 0));
+  st.res.inv.f1 = 100;
+  st.res.contracts.active = [{ id: 1, fabId: 'f1', qty: 80, minY: 0.99 }];
+  let a = get(); assert.equal(a.action, 'sell'); assert.equal(a.sellQty, 20);
+  st.res.contracts.active[0].minY = 0.4;
+  a = get(); assert.equal(a.action, 'market'); assert.equal(a.contract, 1);
+  st.res.contracts.active = []; st.res.inv.f1 = 0;
+  assert.equal(get().action, 'ops');
+  st.res.money = 100000; st.fabs.f1.mode = 'pause'; assert.equal(get().action, 'ops');
+  st.fabs.f1.mode = 'run'; st.fabs.f1.slots[1] = null; assert.equal(get().slot, 1);
+  fresh3({ money: 100000 });
+  const ready = S.getState();
+  const check = () => operatingAdvice(bal, ready, 'f1', Sim.fabStatsNow('f1'), E.lineProjection(bal, 'f1', ready.fabs.f1, 0));
+  assert.equal(check().goal.id, 'f2'); assert.equal(check().action, 'unlock');
+  for (const id of E.levelIds(bal, 'f2')) ready.puzzle.stars[id] = 2;
+  assert.equal(check().title, '準備好擴建下一座廠');
+});
+
+t('開局週轉金足以完成首批生產，不需貸款或提前出清', () => {
+  S.initState(bal, { fresh: true });
+  const s = S.getState();
+  const budget = E.startupBudget(bal, 'f1');
+  assert.ok(bal.start.money >= budget.total);
+  for (let i = 0; i < s.fabs.f1.slots.length; i++) {
+    const id = E.allowedEquip(bal, 'f1', i).sort((a, b) => E.equipPrice(bal, 'f1', a) - E.equipPrice(bal, 'f1', b))[0];
+    assert.ok(S.buyEquip('f1', i, id).ok);
+  }
+  const firstTicks = budget.firstShipTicks + 1;
+  ticks(firstTicks);
+  assert.ok(s.res.inv.f1 > 0, '首批應已完成');
+  assert.ok(s.res.money >= E.lotCost(bal, 'f1'), '首批完成時仍可投片');
+  assert.equal(s.res.loans.length, 0);
+  for (const id of bal.fabOrder) {
+    const b = E.startupBudget(bal, id);
+    assert.equal(b.total, bal.fabs[id].unlockMoney + b.kit + b.working);
+    assert.ok(b.working >= E.lotCost(bal, id) * b.lots);
+  }
+});
 
 t('無頭模擬：貪婪玩家的節奏（Fab 2 約第 18–28 天可負擔）', () => {
   const seeds = Array.from({ length: 12 }, (_, i) => (i + 1) * 7919);

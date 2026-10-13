@@ -303,26 +303,26 @@ async function run(fabId, opts) {
         await board.transition(before, after);
         busy = false;
       }
-      async function doUndo() {
-        const before = session.grid;
+      function doUndo() {
+        if (busy) return;
         if (!session.undo()) return;
         hintMsg = '';
-        await animateTo(before, session.grid);
+        board.setGrid(session.grid);
         refresh();
       }
-      async function doRedo() {
-        const before = session.grid;
+      function doRedo() {
+        if (busy) return;
         if (!session.redo()) return;
         hintMsg = '';
-        await animateTo(before, session.grid);
+        board.setGrid(session.grid);
         refresh();
         checkWin();
       }
-      async function doReset() {
-        const before = session.grid;
+      function doReset() {
+        if (busy) return;
         session.reset();
         hintMsg = '';
-        await animateTo(before, session.grid);
+        board.setGrid(session.grid);
         refresh();
       }
 
