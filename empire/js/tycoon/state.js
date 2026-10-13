@@ -18,6 +18,7 @@ function newFab(fabId, unlocked) {
     ups: false,
     lots: [],
     event: null,
+    rate: 1,    // 產線轉速（營運選擇）
     halt: 0,    // 停線剩餘 tick
     feed: 999   // 距上次投片已過 tick（>= 線速度才能再投）
   };
@@ -25,14 +26,18 @@ function newFab(fabId, unlocked) {
 
 export function createInitialState(balance, seed) {
   bal = balance;
-  const fabs = {}, inv = {};
-  for (const id of bal.fabOrder) { fabs[id] = newFab(id, id === 'f1'); inv[id] = 0; }
+  const fabs = {}, inv = {}, invAge = {}, soldToday = {};
+  for (const id of bal.fabOrder) { fabs[id] = newFab(id, id === 'f1'); inv[id] = 0; invAge[id] = 0; soldToday[id] = 0; }
   return {
     version: SAVE_VERSION,
     savedAt: 0,
     clock: { tick: 0, speed: 1, paused: true },
     rng: { seed: (seed == null ? (Date.now() & 0x7fffffff) : seed) >>> 0 },
-    res: { money: bal.start.money, rep: bal.start.rep, inv, priceWalk: 1.0, repAcc: 0 },
+    res: {
+      money: bal.start.money, rep: bal.start.rep, inv, priceWalk: 1.0, repAcc: 0,
+      demandIdx: 1.0, invAge, soldToday, priceHist: [1.0],
+      contracts: { offers: [], active: [], nextId: 1, nextOfferDay: 3 }
+    },
     fabs,
     nextLotId: 1,
     puzzle: { stars: {}, hintsBought: {} },
@@ -47,7 +52,9 @@ function normalize(s) {
   const base = createInitialState(bal, s.rng?.seed);
   const out = { ...base, ...s };
   out.clock = { ...base.clock, ...s.clock };
-  out.res = { ...base.res, ...s.res, inv: { ...base.res.inv, ...(s.res?.inv || {}) } };
+  out.res = { ...base.res, ...s.res, inv: { ...base.res.inv, ...(s.res?.inv || {}) },
+    invAge: { ...base.res.invAge, ...(s.res?.invAge || {}) }, soldToday: { ...base.res.soldToday, ...(s.res?.soldToday || {}) },
+    contracts: { ...base.res.contracts, ...(s.res?.contracts || {}) } };
   out.puzzle = { ...base.puzzle, ...s.puzzle };
   out.settings = { ...base.settings, ...s.settings };
   out.tutorial = { ...base.tutorial, ...s.tutorial };
@@ -204,3 +211,76 @@ export function markFactSeen(factId) {
   if (!state.seenFacts.includes(factId)) { state.seenFacts.push(factId); save(); }
 }
 export function setSetting(k, v) { state.settings[k] = v; commit(); }
+
+// ---------- 營運選擇：產線轉速 ----------
+export function setRate(fabId, rate) {
+  const fab = state.fabs[fabId];
+  if (!fab?.unlocked || !bal.rate.steps.includes(rate)) return { ok: false, reason: '無法設定' };
+  fab.rate = rate;
+  commit();
+  return { ok: true };
+}
+
+// ---------- 市場：手動賣出 ----------
+export const demandToday = () => Eco.dailyDemand(bal, state.res.demandIdx);
+export function sellRoom(fabId) {
+  return Math.min(state.res.inv[fabId], Eco.sellRoom(demandToday(), state.res.soldToday[fabId] || 0));
+}
+/** 預覽賣出 n 片（不改狀態） */
+export function sellQuote(fabId, n) {
+  const r = state.res;
+  return Math.round(Eco.sellRevenue(bal, fabId, r.rep, r.priceWalk, demandToday(), r.soldToday[fabId] || 0, n, r.invAge[fabId] || 0));
+}
+export function sellInventory(fabId, n) {
+  const r = state.res;
+  n = Math.min(Math.floor(n), sellRoom(fabId));
+  if (!(n > 0)) return { ok: false, reason: r.inv[fabId] > 0 ? '今日市場需求已滿，明天再賣' : '沒有庫存' };
+  const revenue = sellQuote(fabId, n);
+  r.inv[fabId] -= n;
+  r.soldToday[fabId] = (r.soldToday[fabId] || 0) + n;
+  r.money += revenue;
+  bus.emit('inv:sold', { fabId, n, revenue });
+  commit();
+  return { ok: true, n, revenue };
+}
+
+// ---------- 客戶訂單 ----------
+export const currentDay = () => Math.floor(state.clock.tick / bal.ticksPerDay);
+export function acceptContract(id) {
+  const c = state.res.contracts;
+  const i = c.offers.findIndex(o => o.id === id);
+  if (i < 0) return { ok: false, reason: '訂單已失效' };
+  if (c.active.length >= bal.contracts.maxActive) return { ok: false, reason: `同時最多 ${bal.contracts.maxActive} 張訂單` };
+  const o = c.offers.splice(i, 1)[0];
+  o.deadline = currentDay() + o.days;
+  c.active.push(o);
+  commit();
+  return { ok: true };
+}
+export function declineContract(id) {
+  const c = state.res.contracts;
+  c.offers = c.offers.filter(o => o.id !== id);
+  commit();
+  return { ok: true };
+}
+/** 交貨檢查：庫存足夠且該廠目前線良率 ≥ minY。yNow 由呼叫端提供（避免循環相依） */
+export function contractCheck(c, yNow) {
+  const have = state.res.inv[c.fabId];
+  return { stockOk: have >= c.qty, yieldOk: yNow >= c.minY, have, yNow };
+}
+export function deliverContract(id, yNow) {
+  const r = state.res, cs = r.contracts;
+  const c = cs.active.find(o => o.id === id);
+  if (!c) return { ok: false, reason: '訂單已失效' };
+  const chk = contractCheck(c, yNow);
+  if (!chk.stockOk) return { ok: false, reason: `庫存不足（${chk.have} / ${c.qty} 片）` };
+  if (!chk.yieldOk) return { ok: false, reason: `目前線良率 ${(yNow * 100).toFixed(1)}% 低於合約要求 ${(c.minY * 100).toFixed(0)}%` };
+  r.inv[c.fabId] -= c.qty;
+  const pay = Eco.contractPayout(c);
+  r.money += pay;
+  addRep(bal.contracts.repGain);
+  cs.active = cs.active.filter(o => o !== c);
+  bus.emit('contract:done', { id, pay });
+  commit();
+  return { ok: true, pay };
+}

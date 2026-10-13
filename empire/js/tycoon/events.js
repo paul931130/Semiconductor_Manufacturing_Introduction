@@ -11,9 +11,14 @@ export function getEventDefs() { return defs; }
 export function eventModifiers(bal, fab) {
   const ev = fab.event;
   const m = { eventDef: 0, E: 1, pMul: 1 };
-  if (!ev) return m;
-  if (ev.id === 'particle') m.eventDef += ev.extra?.def ?? bal.events.particleDef;
-  if (ev.id === 'rush_order' && ev.extra?.accepted) m.pMul = bal.events.rushTimeMul;
+  if (ev) {
+    if (ev.id === 'particle') m.eventDef += ev.extra?.def ?? bal.events.particleDef;
+    if (ev.id === 'rush_order' && ev.extra?.accepted) m.pMul = bal.events.rushTimeMul;
+  }
+  // 產線轉速（營運選擇）：製程時間 ÷ rate、缺陷率乘上 rateDefMul
+  const rm = Eco.rateMods(bal, fab.rate ?? 1);
+  m.pMul *= rm.pMul;
+  m.eventDef = (1 + m.eventDef) * rm.defMul - 1;
   return m;
 }
 
@@ -25,7 +30,7 @@ export function rollDailyEvents(state, bal, day) {
   for (const fabId of bal.fabOrder) {
     const fab = state.fabs[fabId];
     if (!fab.unlocked || fab.event) continue;
-    if (nextRandom(state.rng) >= bal.events.dailyChance) continue;
+    if (nextRandom(state.rng) >= bal.events.dailyChance * Math.pow(fab.rate ?? 1, 2)) continue; // 轉速越高越容易出事
     let id = ids[Math.floor(nextRandom(state.rng) * ids.length)];
     if (!state.tutorial.done.includes('t-event')) { id = 'particle'; state.tutorial.done.push('t-event'); } // 首個事件固定 particle
     if (id === 'tool_failure' && !fab.slots.some(Boolean)) id = 'particle';

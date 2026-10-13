@@ -31,7 +31,9 @@ function shipLot(s, bal, fabId, fab, lot, st) {
     s.res.money += Math.round(good * price * bal.events.rushPriceMul);
   } else {
     const room = Math.max(0, bal.invCap - s.res.inv[fabId]);
-    s.res.inv[fabId] += Math.min(good, room);
+    const add = Math.min(good, room);
+    s.res.invAge[fabId] = Eco.mergeAge(s.res.invAge[fabId] || 0, s.res.inv[fabId], add);
+    s.res.inv[fabId] += add;
   }
   bus.emit('lot:shipped', { fabId, lotId: lot.id, good, Y, rush });
 }
@@ -63,12 +65,12 @@ function advanceFab(s, bal, fabId, fab) {
   // 投片
   if (fab.feed < 9999) fab.feed += 1;
   if (st.complete && bad < 0 && st.interval != null && fab.feed >= st.interval - 1e-9
-      && !fab.lots.some(l => l.slot === 0)) {
+      && s.res.inv[fabId] < bal.startHaltInv && !fab.lots.some(l => l.slot === 0)) {
     const cost = Eco.lotCost(bal, fabId);
     if (s.res.money >= cost) {
       s.res.money -= cost;
       fab.lots.push({ id: s.nextLotId++, slot: 0, progress: 0, good: null });
-      fab.feed = 0;
+      fab.feed = Math.min(Math.max(fab.feed - st.interval, 0), 0.999); // 保留小數餘量，平均投片間隔 = 瓶頸處理時間
       bus.emit('lot:started', { fabId });
     } else if ((starveAt.get(fabId) ?? -99) + bal.ticksPerDay <= s.clock.tick) {
       starveAt.set(fabId, s.clock.tick);
@@ -77,22 +79,56 @@ function advanceFab(s, bal, fabId, fab) {
   }
 }
 
+/** 客戶訂單：過期懲罰、訂單報價過期、定期新增報價 */
+function contractsDay(s, bal, day) {
+  const cs = s.res.contracts, cfg = bal.contracts;
+  const left = [];
+  for (const c of cs.active) {
+    if (day >= c.deadline) {
+      const pen = Math.min(c.penalty, s.res.money);
+      s.res.money -= pen; addRep(-cfg.repLoss);
+      bus.emit('toast', `訂單逾期未交貨：違約金 -$${pen.toLocaleString('en-US')}，聲望 -${cfg.repLoss}`);
+    } else left.push(c);
+  }
+  cs.active = left;
+  cs.offers = cs.offers.filter(o => day < o.offerEnd);
+  if (day >= cs.nextOfferDay && cs.offers.length < cfg.maxOffers) {
+    const open = bal.fabOrder.filter(f => s.fabs[f].unlocked && s.fabs[f].slots.every(Boolean));
+    if (open.length) {
+      const fabId = open[Math.floor(nextRandom(s.rng) * open.length)];
+      const Y = fabStatsNow(fabId).Y;
+      const r = [nextRandom(s.rng), nextRandom(s.rng), nextRandom(s.rng), nextRandom(s.rng), nextRandom(s.rng)];
+      cs.offers.push(Eco.makeContract(bal, fabId, s.res.rep, Y, r, cs.nextId++, day));
+      bus.emit('contract:offer', { fabId });
+      bus.emit('toast', `${bal.fabs[fabId].zh} 收到新的客戶訂單（到「市場與訂單」查看）`);
+    }
+    cs.nextOfferDay = day + cfg.gapMin + Math.floor(nextRandom(s.rng) * (cfg.gapMax - cfg.gapMin + 1));
+  }
+}
+
 function settleDay(s, bal) {
   const day = s.clock.tick / bal.ticksPerDay;
-  const r = s.res;
-  r.priceWalk = Eco.nextPriceWalk(bal, r.priceWalk, nextRandom(s.rng));
-  let revenue = 0, sold = 0, maint = 0;
+  const r = s.res, m = bal.market;
+  // 市場：價格指數（含偶發衝擊）與需求指數
+  const shock = nextRandom(s.rng) < m.shockChance ? (nextRandom(s.rng) < 0.5 ? -1 : 1) * m.shockSize : 0;
+  r.priceWalk = Eco.nextPriceWalk(bal, r.priceWalk, nextRandom(s.rng), shock);
+  r.demandIdx = Eco.nextDemand(bal, r.demandIdx, nextRandom(s.rng));
+  r.priceHist = [...(r.priceHist || []), r.priceWalk].slice(-m.histLen);
+  let maint = 0, hold = 0;
   for (const fabId of bal.fabOrder) {
     const fab = s.fabs[fabId];
+    r.soldToday[fabId] = 0;
     if (!fab.unlocked) continue;
-    const n = Math.min(r.inv[fabId], bal.demandCap);
-    const price = Eco.sellPrice(bal, fabId, r.rep, r.priceWalk);
-    r.inv[fabId] -= n; sold += n; revenue += n * price;
+    hold += Eco.holdCost(bal, fabId, r.inv[fabId]);       // 倉儲成本
+    if (r.inv[fabId] > 0) r.invAge[fabId] = (r.invAge[fabId] || 0) + 1; // 庫存變老
+    else r.invAge[fabId] = 0;
     maint += bal.fabs[fabId].maintenance;
+    if (r.inv[fabId] >= bal.invCap * 0.8) bus.emit('toast', `${bal.fabs[fabId].zh} 庫存快滿了（${r.inv[fabId]} / ${bal.invCap}），記得賣出！`);
   }
-  r.money += Math.round(revenue);
-  r.money -= maint;
+  hold = Math.round(hold);
+  r.money -= maint + hold;
   if (r.money < 0) { r.money = 0; addRep(-1); bus.emit('toast', '維運費付不出來，聲望 -1'); }
+  contractsDay(s, bal, day);
   addRep(Eco.clamp(r.repAcc, -bal.rep.dailyCap, bal.rep.dailyCap));
   r.repAcc = 0;
 
@@ -107,7 +143,7 @@ function settleDay(s, bal) {
     triggered.push(Ev.triggerEvent(s, bal, t.fabId, t.id, addRep));
   }
   save();
-  bus.emit('day', { day, sold, revenue: Math.round(revenue), maint });
+  bus.emit('day', { day, maint, hold });
   for (const t of triggered) bus.emit('event:trigger', { fabId: t.fabId, id: t.id });
 }
 

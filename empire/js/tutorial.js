@@ -20,11 +20,11 @@ function mark(id) {
 export function createTutorial() {
   let rootEl = null, dims = [], ring = null, card = null;
   let raf = 0, steps = [], idx = 0, cur = null, active = false, standalone = false;
-  let shipCount = 0, soldDays = 0, base = 0, lastTarget = null, shownKey = '';
+  let shipCount = 0, soldCount = 0, base = 0, lastTarget = null, shownKey = '';
   const refs = {};
 
   bus.on('lot:shipped', () => { shipCount++; });
-  bus.on('day', d => { if (d.sold > 0) soldDays++; });
+  bus.on('inv:sold', () => { soldCount++; });
   bus.on('state:reset', () => { if (active) stop(); });
 
   // ---------------- 內容 ----------------
@@ -53,7 +53,12 @@ export function createTutorial() {
           enter: () => { base = shipCount; }, done: () => shipCount > base },
         { title: '良率怎麼算', mode: 'next', pos: 'bottom', nextLabel: '懂了',
           text: '每台機台有缺陷率 d，單槽良率 y = 1 − d；整條線良率 Y = 所有 y 相乘。槽越多、機台等級越低，Y 越低。升級機台與提高解謎星數都能讓 Y 變高。' },
-        { title: '每日結算', text: '每 24 小時結算一次：庫存賣出、扣日維運。等第一次賣出。', enter: () => { base = soldDays; }, done: () => soldDays > base },
+        { title: '成品不會自動賣出', mode: 'next', pos: 'bottom', nextLabel: '懂了',
+          text: '出貨的良品先進庫存。每 24 小時結算只會扣日維運與倉儲費；賣不賣、何時賣由你決定：行情好時多賣，行情差可以囤，但庫存會變老、售價每天 −2%。' },
+        { title: '賣出庫存', text: '往下捲到「市場與訂單」，按「全部賣出」把庫存換成現金。', target: 'btn-sell-all', block: false,
+          enter: () => { base = soldCount; }, done: () => soldCount > base },
+        { title: '訂單與轉速', mode: 'next', pos: 'bottom', nextLabel: '知道了',
+          text: '之後客戶會不定期送來訂單（高單價，但有良率門檻、交期與違約金）。「產線轉速」可以拿良率換產能；槽位上標「瓶頸」的機台最值得升級，升級對話框會顯示前後對照。' },
       ] },
       { id: 't-puzzle', steps: [
         { title: '想開 Fab 2 嗎？', mode: 'next', nextLabel: '去看看',

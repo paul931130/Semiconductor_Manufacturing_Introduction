@@ -11,6 +11,7 @@ body.ty-body { margin: 0; padding: 0 16px 48px; overscroll-behavior: contain; to
 .ty-wrap h2 { font-size: 16px; margin: 0; }
 .ty-muted { color: var(--ty-mut); font-size: 13px; margin: 4px 0; }
 .ty-err, .ty-warn { color: var(--ty-warn); font-size: 13px; margin: 6px 0; }
+.ty-warn--big { font-size: 15px; font-weight: 700; padding: 8px 10px; border: 2px solid var(--ty-warn); border-radius: 8px; background: rgba(255,184,74,.12); }
 
 /* buttons */
 .ty-btn { min-height: 44px; min-width: 44px; padding: 8px 14px; border: 1px solid var(--ty-line); border-radius: 10px; background: var(--ty-panel2); color: var(--ty-fg); font: inherit; cursor: pointer; touch-action: manipulation; }
@@ -108,3 +109,27 @@ body.ty-body { margin: 0; padding: 0 16px 48px; overscroll-behavior: contain; to
 
 .ty-dev { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0; padding: 8px; border: 1px dashed var(--ty-line); border-radius: 10px; }
 .ty-dev h2 { width: 100%; font-size: 13px; color: var(--ty-mut); }
+
+/* 市場與訂單、瓶頸、升級對照、轉速 */
+.ty-sec { font-size: 15px; margin: 16px 0 6px; }
+.ty-market { margin-top: 8px; }
+.ty-mkt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ty-spark { letter-spacing: 1px; font-size: 14px; color: var(--ty-acc); }
+.ty-inv-box { background: var(--ty-panel); border-radius: 10px; padding: 8px 10px; margin: 6px 0; font-size: 14px; }
+.ty-sell .ty-btn { flex: 1 1 100%; }
+.ty-contract { background: var(--ty-panel); border: 1px solid var(--ty-line); border-radius: 10px; padding: 8px 10px; margin: 6px 0; }
+.ty-contract.is-active { border-color: var(--ty-gold); }
+.ty-contract .ty-btn { margin-top: 6px; }
+.ty-rate .ty-btn { flex: 1 1 calc(50% - 8px); text-align: left; }
+.ty-rate .ty-btn.is-on { border-color: var(--ty-acc); box-shadow: 0 0 0 1px var(--ty-acc) inset; background: var(--ty-panel); }
+.ty-bn { font-size: 13px; background: var(--ty-panel); border-left: 4px solid var(--ty-warn); border-radius: 6px; padding: 6px 10px; margin: 6px 0; }
+.ty-slot { position: relative; }
+.ty-slot.is-bottleneck { border-color: var(--ty-warn); box-shadow: 0 0 0 2px var(--ty-warn) inset; }
+.ty-tag { position: absolute; top: -9px; right: 4px; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; line-height: 1.4; }
+.ty-tag--bn { background: var(--ty-warn); color: #1b1200; }
+.ty-tag--yl { background: var(--ty-panel2); color: var(--ty-warn); border: 1px solid var(--ty-warn); }
+.ty-line[data-mode="v"] .ty-tag { top: -7px; }
+.ty-upg table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.ty-upg caption { text-align: left; color: var(--ty-mut); font-size: 12px; padding-bottom: 4px; }
+.ty-upg th { text-align: left; font-weight: 400; color: var(--ty-mut); padding: 3px 4px 3px 0; }
+.ty-upg td { padding: 3px 4px; white-space: nowrap; }

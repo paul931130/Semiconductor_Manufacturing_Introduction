@@ -91,11 +91,88 @@ export function repGain(bal, Y) {
 export function nominalMargin(bal, fabId) { const f = bal.fabs[fabId]; return 1 - f.cost / f.price; }
 export function breakEvenYield(bal, fabId) { const f = bal.fabs[fabId]; return f.cost / f.price; }
 
-/** 市場波動：每日隨機漫步，限 min–max。r ∈ [0,1) */
-export function nextPriceWalk(bal, walk, r) {
-  const w = bal.priceWalk;
-  return clamp(walk + (r * 2 - 1) * w.step, w.min, w.max);
+/** 市場價格指數：均值回歸 + 隨機步 + 偶發衝擊（shock 為加算），限 priceMin–priceMax。r ∈ [0,1) */
+export function nextPriceWalk(bal, walk, r, shock = 0) {
+  const m = bal.market;
+  return clamp(walk + m.revert * (1 - walk) + (r * 2 - 1) * m.priceStep + shock, m.priceMin, m.priceMax);
 }
+/** 需求指數：同樣均值回歸，限 demandMin–demandMax */
+export function nextDemand(bal, d, r) {
+  const m = bal.market;
+  return clamp(d + m.demandRevert * (1 - d) + (r * 2 - 1) * m.demandStep, m.demandMin, m.demandMax);
+}
+/** 每日市場需求量（片）= demandCap × 需求指數 */
+export function dailyDemand(bal, demandIdx) { return Math.max(1, Math.round(bal.demandCap * demandIdx)); }
+/** 庫存新鮮度：1 − decay × 平均庫齡（日），不低於 floor */
+export function freshness(bal, age) { return Math.max(bal.market.ageFloor, 1 - bal.market.ageDecay * age); }
+/** 新增 addN 片（庫齡 0）後的平均庫齡 */
+export function mergeAge(age, n, addN) { return n + addN > 0 ? age * n / (n + addN) : 0; }
+/** 每日倉儲成本 = 片數 × 每片成本 × holdRate */
+export function holdCost(bal, fabId, n) { return n * bal.fabs[fabId].cost * bal.market.holdRate; }
+/** 今日還能賣的片數（今日已賣 sold0） */
+export function sellRoom(D, sold0) { return Math.max(0, D - sold0); }
+/** 賣出 n 片的營收：單價 × 新鮮度 ×（1 − slip × 賣出進度中點 / D）；賣越多單價被壓得越低 */
+export function sellRevenue(bal, fabId, rep, walk, D, sold0, n, age = 0) {
+  if (n <= 0) return 0;
+  const p = sellPrice(bal, fabId, rep, walk) * freshness(bal, age);
+  return n * p * (1 - bal.market.slip * (sold0 + n / 2) / D);
+}
+
+/** 產線轉速 rate：製程時間 ÷ rate；缺陷率 × (1 + rateDefect × (rate−1)) */
+export function rateMods(bal, rate = 1) {
+  const r = clamp(rate, bal.rate.min, bal.rate.max);
+  return { pMul: 1 / r, defMul: Math.max(0.2, 1 + bal.rate.defect * (r - 1)) };
+}
+
+/** 瓶頸槽：處理時間最長者（同分取前者）；產線不通回 -1 */
+export function bottleneckIndex(hours) {
+  if (!hours.length || hours.some(h => h == null)) return -1;
+  let b = 0;
+  hours.forEach((h, i) => { if (h > hours[b] + 1e-9) b = i; });
+  return b;
+}
+
+/** 並列瓶頸：所有與最慢者同分的槽（只升其中一槽，產能不會變）；產線不通回 [] */
+export function bottleneckSet(hours) {
+  const b = bottleneckIndex(hours);
+  if (b < 0) return [];
+  return hours.map((h, i) => i).filter(i => hours[i] >= hours[b] - 1e-9);
+}
+
+/** 日損益預估（行情 walk、需求 demandIdx；預設標準行情）：產出受瓶頸限制，銷量受需求限制 */
+export function lineProjection(bal, fabId, fab, S, mods = {}, rep = 20, walk = 1, demandIdx = 1) {
+  const st = fabStats(bal, fabId, fab, S, mods, rep, walk);
+  const D = dailyDemand(bal, demandIdx);
+  const good = st.wafersPerDay * st.Y;
+  const sold = Math.min(good, D);
+  const f = bal.fabs[fabId];
+  const revenue = sold > 0 ? sellRevenue(bal, fabId, rep, walk, D, 0, sold, 0) : 0;
+  // 庫存滿了產線會暫停投片：供過於求時，實際投片 ≈ 賣得掉的量 ÷ 良率
+  const started = good > D ? Math.min(st.wafersPerDay, D / Math.max(st.Y, 1e-9)) : st.wafersPerDay;
+  const startCost = started * f.cost;
+  return {
+    Y: st.Y, wafersPerDay: st.wafersPerDay, goodPerDay: good, demand: D, sold, revenue, startCost,
+    maintenance: f.maintenance, profitPerDay: st.complete ? revenue - startCost - f.maintenance : 0,
+    saturated: good > D, bottleneck: bottleneckIndex(st.hours), bottlenecks: bottleneckSet(st.hours), complete: st.complete
+  };
+}
+
+/** 客戶訂單：r 為 4 個 [0,1) 亂數。單價鎖定（不受行情影響），須交付良率 ≥ minY */
+export function makeContract(bal, fabId, rep, Y, r, id, day) {
+  const c = bal.contracts;
+  const D = bal.demandCap;
+  const qty = Math.max(10, Math.round(D * (c.qtyMin + (c.qtyMax - c.qtyMin) * r[0]) / 5) * 5);
+  const prem = c.premMin + (c.premMax - c.premMin) * r[1];
+  const unitPrice = Math.round(sellPrice(bal, fabId, rep, 1) * prem * 100) / 100;
+  // 多數訂單的良率門檻落在「目前良率附近」；少數(stretch)是明確標示的挑戰單
+  const stretch = (r[4] ?? 0.5) < c.stretchChance;
+  const lo = stretch ? c.stretchMin : c.yieldMin, hi = stretch ? c.stretchMax : c.yieldMax;
+  const minY = clamp(Math.round((Y + lo + (hi - lo) * r[2]) * 100) / 100, 0.4, 0.97);
+  const days = c.daysMin + Math.floor(r[3] * (c.daysMax - c.daysMin + 1));
+  return { id, fabId, qty, minY, unitPrice, days, stretch, premium: Math.round(prem * 100) / 100,
+    penalty: Math.round(qty * unitPrice * c.penaltyFrac), offerEnd: day + c.offerDays, deadline: null };
+}
+export const contractPayout = c => Math.round(c.qty * c.unitPrice);
 
 /** 單 Lot 投片成本 */
 export function lotCost(bal, fabId) { return bal.fabs[fabId].cost * bal.lotSize; }
@@ -116,11 +193,12 @@ export function fabStats(bal, fabId, fab, S, mods = {}, rep = 20, walk = 1) {
   const pMul = mods.pMul == null ? 1 : mods.pMul;
   const hours = fab.slots.map(s => (s ? slotHours(bal, s.equip, s.level) * pMul : null));
   const interval = lineInterval(hours);
+  const bottleneck = bottleneckIndex(hours);
   const Y = lineYield(bal, fabId, fab.slots, S, mods);
   const complete = fab.slots.every(Boolean);
   const lotsPerDay = interval ? bal.ticksPerDay / interval : 0;
   return {
-    hours, interval, Y, complete, lotsPerDay,
+    hours, interval, Y, complete, lotsPerDay, bottleneck, bottlenecks: bottleneckSet(hours),
     wafersPerDay: lotsPerDay * bal.lotSize,
     price: sellPrice(bal, fabId, rep, walk),
     breakEven: breakEvenYield(bal, fabId)

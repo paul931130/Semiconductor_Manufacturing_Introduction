@@ -56,7 +56,7 @@ export function mountHud(root) {
   bus.on('state:changed', render);
   bus.on('tick', render);
   bus.on('clock:changed', renderClock);
-  bus.on('day', d => toast(`第 ${d.day} 日結算：售出 ${d.sold} 片，營收 ${money(d.revenue)}，維運 -${money(d.maint)}`));
+  bus.on('day', d => toast(`第 ${d.day} 日結算：維運 -${money(d.maint)}，倉儲 -${money(d.hold)}。庫存要自己到產線頁賣出！`));
   bus.on('toast', m => toast(m));
   bus.on('fab:unlocked', ({ fabId }) => toast(`${bal.fabs[fabId].zh}（${bal.fabs[fabId].node}）開通了！`));
   render();

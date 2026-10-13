@@ -1,8 +1,26 @@
 // localStorage 存檔：key、version、migrate（§7.2）
 export const SAVE_KEY = 'waferEmpire.save';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 // migrations[v] 把 version v 的存檔轉成 v+1
-export const migrations = {};
+export const migrations = {
+  // v1 → v2：加入市場（需求指數、庫齡、今日已售、價格歷史）、客戶訂單、各廠產線轉速
+  1: raw => {
+    const s = { ...raw, version: 2 };
+    const res = { ...(raw.res || {}) };
+    const inv = res.inv || {};
+    const zero = {}; for (const k of Object.keys(inv)) zero[k] = 0;
+    res.demandIdx = res.demandIdx ?? 1;
+    res.invAge = res.invAge || { ...zero };
+    res.soldToday = res.soldToday || { ...zero };
+    res.priceHist = res.priceHist || [res.priceWalk ?? 1];
+    const day = Math.floor(((raw.clock && raw.clock.tick) || 0) / 24);
+    res.contracts = res.contracts || { offers: [], active: [], nextId: 1, nextOfferDay: day + 3 };
+    s.res = res;
+    s.fabs = {};
+    for (const [id, f] of Object.entries(raw.fabs || {})) s.fabs[id] = { ...f, rate: f.rate ?? 1 };
+    return s;
+  }
+};
 
 export function migrate(raw) {
   if (!raw || typeof raw !== 'object' || !Number.isInteger(raw.version) || raw.version < 1) {
