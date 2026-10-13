@@ -29,7 +29,7 @@ export function rollDailyEvents(state, bal, day) {
   const ids = Object.keys(defs);
   for (const fabId of bal.fabOrder) {
     const fab = state.fabs[fabId];
-    if (!fab.unlocked || fab.event) continue;
+    if (!fab.unlocked || fab.event || !Eco.modeAdvances(Eco.modeOf(fab))) continue; // 暫停／封存的廠不擲事件
     if (nextRandom(state.rng) >= bal.events.dailyChance * Math.pow(fab.rate ?? 1, 2)) continue; // 轉速越高越容易出事
     let id = ids[Math.floor(nextRandom(state.rng) * ids.length)];
     if (!state.tutorial.done.includes('t-event')) { id = 'particle'; state.tutorial.done.push('t-event'); } // 首個事件固定 particle

@@ -4,7 +4,7 @@ import { bus } from '../shared/bus.js';
 import * as S from '../tycoon/state.js';
 import * as Eco from '../tycoon/economy.js';
 import { fabStatsNow, fabMods } from '../tycoon/sim.js';
-import { money } from '../tycoon/ui.js';
+import { money, toast } from '../tycoon/ui.js';
 import { say, lineText, lineIds, flag, setFlag, nowTick, getMode } from './dialogue.js';
 
 const bal = () => S.getBal();
@@ -215,6 +215,35 @@ export function installTriggers() {
     if (probes.tutorialActive()) { setFlag('first-sale'); return; } // 教學已經講過
     say('sale.first', { once: 'first-sale' });
   }));
+  // 產線狀態、貸款、低現金防護（玩家動作的回饋一律 force，不被節流吃掉）
+  const modeVars = (fabId, extra = {}) => ({ fab: fabName(fabId), n: st().fabs[fabId].lots.length, pct: Math.round(bal().mode.upkeep[st().fabs[fabId].mode || 'run'] * 100), ...extra });
+  bus.on('mode:changed', guard('mode', ({ fabId, from, to, cost, scrapped, by }) => {
+    if (by === 'guard' || probes.tutorialActive()) return;
+    if (from === 'mothball' && to === 'run') say('mode.restart', { force: true, vars: modeVars(fabId, { cost: money(cost) }) });
+    else say('mode.' + to, { force: true, vars: modeVars(fabId, { scrapped, scrap: scrapped > 0, cost: money(Eco.restartCost(bal(), fabId)) }) });
+  }));
+  bus.on('fab:drained', guard('drained', ({ fabId }) => {
+    if (probes.tutorialActive()) return;
+    say('mode.drained', { key: 'drained:' + fabId, cd: 1, vars: modeVars(fabId, { pct: Math.round(bal().mode.upkeep.mothball * 100) }) });
+  }));
+  bus.on('guard:triggered', guard('guard', ({ fabId, money: m, threshold }) => {
+    const r = say('guard.trigger', { pri: 'important', force: true, vars: { fab: fabName(fabId), money: money(m), th: money(threshold) } });
+    if (!handled(r)) toast(`${fabName(fabId)}現金低於防護線，已改成「只做完在製品」`);
+  }));
+  bus.on('loan:taken', guard('loan', ({ amount, dueDay }) => {
+    if (probes.tutorialActive()) return;
+    say('loan.taken', { force: true, vars: { amount: money(amount), rate: (bal().loan.dailyRate * 100).toFixed(1), due: dueDay + 1 } });
+  }));
+  bus.on('loan:repaid', guard('repay', ({ amount, left }) => {
+    if (probes.tutorialActive()) return;
+    say('loan.repaid', { force: true, vars: { amount: money(amount), left: money(left), cleared: left <= 0 } });
+  }));
+  bus.on('loan:overdue', guard('overdue', ({ owed }) => {
+    const r = say('loan.overdue', { pri: 'important', vars: { owed: money(owed), rep: bal().loan.overdueRep } });
+    if (!handled(r)) toast('貸款逾期了！聲望下降，還清前不能再借');
+  }));
+  bus.on('rescue:grant', guard('grant', ({ amount }) => { say('rescue.grant', { force: true, vars: { amount: money(amount), rep: bal().rescue.repLoss } }); }));
+
   bus.on('fab:unlocked', guard('unlock', ({ fabId }) => { say('fab.unlocked.' + fabId, { pri: 'important' }); }));
 
   bus.on('puzzle:start', guard('pzstart', ({ fabId }) => {

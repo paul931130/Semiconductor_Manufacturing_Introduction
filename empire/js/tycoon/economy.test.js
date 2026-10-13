@@ -265,22 +265,268 @@ t('PRNG：同種子可重現，值域 [0,1)；存檔 migrate 拒讀新版', () =
   assert.equal(migrate({}).ok, false);
 });
 
-t('存檔 v1 → v2 migration：補上市場／訂單／轉速欄位並保留原資料', () => {
-  assert.equal(SAVE_VERSION, 2);
+t('存檔 v1 → v3 migration（經 v2）：補上市場／訂單／轉速／狀態欄位並保留原資料', () => {
+  assert.equal(SAVE_VERSION, 3);
   const v1 = { version: 1, clock: { tick: 24 * 12, speed: 1, paused: true }, rng: { seed: 5 },
     res: { money: 777, rep: 33, inv: { f1: 40, f2: 0, f3: 0, f4: 0, f5: 0 }, priceWalk: 1.05, repAcc: 0 },
     fabs: { f1: { unlocked: true, slots: [null, null, null, null], ups: false, lots: [], event: null, halt: 0, feed: 999 } } };
   const r = migrate(v1);
-  assert.ok(r.ok); assert.equal(r.save.version, 2);
+  assert.ok(r.ok); assert.equal(r.save.version, 3);
   assert.equal(r.save.res.money, 777); assert.equal(r.save.res.inv.f1, 40);
   assert.equal(r.save.res.demandIdx, 1);
   assert.deepEqual(Object.keys(r.save.res.invAge), ['f1', 'f2', 'f3', 'f4', 'f5']);
   assert.deepEqual(r.save.res.priceHist, [1.05]);
   assert.deepEqual(r.save.res.contracts.offers, []); assert.equal(r.save.res.contracts.nextOfferDay, 15);
   assert.equal(r.save.fabs.f1.rate, 1);
-  assert.equal(migrate(r.save).ok, true); // v2 存檔直接通過
+  assert.equal(r.save.fabs.f1.mode, 'run'); assert.deepEqual(r.save.res.loans, []);
+  assert.equal(migrate(r.save).ok, true); // v3 存檔直接通過
   assert.equal(v1.version, 1);            // 不改動原物件
 });
+
+// ---------- v3：產線狀態、貸款、緊急出清、自動化、斷鏈 ----------
+function fresh3({ money = 1e6, fabs = ['f1'] } = {}) {
+  const b2 = JSON.parse(JSON.stringify(bal)); b2.events.dailyChance = 0;
+  setEventDefs(loadEvents());
+  S.initState(b2, { fresh: true });
+  Sim.resetSim();
+  const st = S.getState();
+  st.rng.seed = 99; st.tutorial.done.push('t-event');
+  for (const f of fabs) {
+    st.fabs[f].unlocked = true;
+    st.fabs[f].slots.forEach((_, i) => {
+      const e = E.allowedEquip(b2, f, i)[0];
+      st.fabs[f].slots[i] = { equip: e, level: 1, invested: E.equipPrice(b2, f, e) };
+    });
+  }
+  st.res.money = money;
+  return { st, b: b2 };
+}
+const ticks = n => { for (let i = 0; i < n; i++) Sim.stepTick(); };
+const count = (ev, fn) => { let c = 0; const off = bus.on(ev, () => c++); fn(); if (typeof off === 'function') off(); return c; };
+
+t('v3 狀態維運倍率：運轉／只做完 ×1、暫停 ×0.3、封存 ×0.1，且實際一日扣款一致', () => {
+  assert.equal(E.fabUpkeep(bal, 'f1', 'run'), 250); assert.equal(E.fabUpkeep(bal, 'f1', 'drain'), 250);
+  assert.equal(E.fabUpkeep(bal, 'f1', 'pause'), 75); assert.equal(E.fabUpkeep(bal, 'f1', 'mothball'), 25);
+  assert.equal(E.fabUpkeep(bal, 'f4', 'pause'), Math.round(4500 * 0.3));
+  for (const [mode, fee] of [['pause', 75], ['mothball', 25]]) {
+    const { st } = fresh3({ money: 5000 });
+    assert.ok(S.setMode('f1', mode).ok);
+    ticks(24);
+    assert.equal(st.res.money, 5000 - fee, mode); // 沒有投片、沒有庫存 → 只有維運費
+  }
+});
+
+t('v3 只做完在製品：不再投新 Lot，在製品照常出貨進庫存，清空時通知', () => {
+  const { st } = fresh3();
+  ticks(30);
+  assert.ok(st.fabs.f1.lots.length > 0);
+  assert.ok(S.setMode('f1', 'drain').ok);
+  let drained = 0; const off = bus.on('fab:drained', () => drained++);
+  const started = count('lot:started', () => ticks(24 * 3));
+  if (typeof off === 'function') off();
+  assert.equal(started, 0);
+  assert.equal(st.fabs.f1.lots.length, 0);
+  assert.ok(st.res.inv.f1 > 0, '在製品出貨成庫存');
+  assert.equal(drained, 1);
+  assert.ok(S.setMode('f1', 'run').ok);
+  assert.ok(count('lot:started', () => ticks(12)) > 0, '切回運轉後恢復投片');
+});
+
+t('v3 暫停：在製品完全凍結（位置不動、不出貨、不投片），解除後繼續', () => {
+  const { st } = fresh3();
+  ticks(30); st.res.inv.f1 = 0;
+  const snap = JSON.stringify(st.fabs.f1.lots);
+  assert.ok(st.fabs.f1.lots.length > 0);
+  S.setMode('f1', 'pause');
+  const started = count('lot:started', () => ticks(48));
+  assert.equal(started, 0);
+  assert.equal(JSON.stringify(st.fabs.f1.lots), snap);
+  assert.equal(st.res.inv.f1, 0);
+  S.setMode('f1', 'run');
+  ticks(12);
+  assert.notEqual(JSON.stringify(st.fabs.f1.lots), snap);
+});
+
+t('v3 停機封存：有在製品需確認並報廢；封存不投片；重啟付費並暖機約 1 日', () => {
+  const { st } = fresh3();
+  ticks(30);
+  const n = st.fabs.f1.lots.length; assert.ok(n > 0);
+  const r0 = S.setMode('f1', 'mothball');
+  assert.ok(!r0.ok && r0.needConfirm && r0.scrap === n); assert.equal(st.fabs.f1.lots.length, n); // 沒確認 → 什麼都沒變
+  const r1 = S.setMode('f1', 'mothball', { confirmScrap: true });
+  assert.ok(r1.ok && r1.scrapped === n); assert.equal(st.fabs.f1.lots.length, 0);
+  assert.ok(!S.setMode('f1', 'pause').ok, '封存中不能直接改暫停');
+  assert.equal(count('lot:started', () => ticks(48)), 0);
+  const cost = E.restartCost(bal, 'f1'); assert.equal(cost, 500);
+  st.res.money = cost - 1; assert.ok(!S.setMode('f1', 'run').ok);
+  st.res.money = 10000; const m0 = st.res.money;
+  assert.ok(S.setMode('f1', 'run').ok); assert.equal(st.res.money, m0 - cost); assert.equal(st.fabs.f1.ramp, bal.mode.rampTicks);
+  assert.equal(count('lot:started', () => ticks(bal.mode.rampTicks - 2)), 0, '暖機中不投片');
+  assert.ok(count('lot:started', () => ticks(30)) > 0, '暖機後恢復投片');
+  // 空線封存不需確認
+  S.setMode('f1', 'drain'); ticks(24 * 3); assert.equal(st.fabs.f1.lots.length, 0);
+  assert.ok(S.setMode('f1', 'mothball').ok);
+});
+
+t('v3 貸款：額度 = (基本+聲望×係數)×最高開通廠倍率；日利率；隨時可還；超額被拒', () => {
+  const { st } = fresh3({ money: 1000 });
+  S.setMode('f1', 'pause'); // 排除投片影響
+  assert.equal(E.creditLimit(bal, 20, ['f1']), 4000);
+  assert.equal(E.creditLimit(bal, 20, ['f1', 'f2']), 8000);
+  assert.ok(E.creditLimit(bal, 50, ['f1']) > E.creditLimit(bal, 20, ['f1']));
+  assert.ok(!S.takeLoan(5000).ok); assert.ok(!S.takeLoan(300).ok);
+  const r = S.takeLoan(2000);
+  assert.ok(r.ok); assert.equal(st.res.money, 3000); assert.equal(S.loanAvailable(), 2000);
+  assert.equal(r.loan.dueDay, 0 + bal.loan.termDays);
+  ticks(24); // 一日：利息 = 本金 × 1.2% = 24（累加到欠款，不扣現金）
+  assert.equal(st.res.loans[0].owed, 2024); assert.equal(st.res.money, 3000 - 75);
+  assert.ok(S.repayLoan(500).ok); assert.equal(S.loanOwed(), 1524);
+  assert.equal(st.res.loans[0].principal, 1524, '還款後本金 ≤ 欠款，利息隨之下降');
+  st.res.money = 10000;
+  assert.ok(S.repayLoan(1e9).ok); assert.equal(st.res.loans.length, 0); assert.equal(S.loanOwed(), 0);
+  assert.ok(!S.repayLoan(100).ok);
+});
+
+t('v3 貸款逾期：聲望懲罰、不能再借、利率加倍，還清後恢復', () => {
+  const { st } = fresh3({ money: 50000 });
+  S.setMode('f1', 'pause');
+  S.takeLoan(2000);
+  let overdue = 0; const off = bus.on('loan:overdue', () => overdue++);
+  const rep0 = st.res.rep;
+  ticks(24 * (bal.loan.termDays - 1)); assert.ok(!st.res.loans[0].overdue);
+  ticks(24); // 第 termDays 日結算 → 逾期
+  if (typeof off === 'function') off();
+  assert.equal(overdue, 1); assert.ok(st.res.loans[0].overdue);
+  near(st.res.rep, rep0 - bal.loan.overdueRep, 1e-9, 'rep');
+  assert.equal(S.loanAvailable(), 0); assert.ok(!S.takeLoan(500).ok);
+  const before = st.res.loans[0].owed;
+  ticks(24);
+  assert.equal(st.res.loans[0].owed - before, Math.round(2000 * bal.loan.overdueRate)); // 逾期利率
+  near(st.res.rep, rep0 - bal.loan.overdueRep - bal.loan.overdueDailyRep, 1e-9);
+  S.repayLoan(1e9);
+  assert.ok(S.loanAvailable() > 0); assert.ok(S.takeLoan(500).ok);
+});
+
+t('v3 緊急出清：不受每日需求量限制，單價 = 市價 × 新鮮度 × 0.7（比正常賣便宜）', () => {
+  const { st } = fresh3({ money: 100 });
+  S.setMode('f1', 'pause');
+  const D = S.demandToday();
+  st.res.inv.f1 = D + 200; st.res.soldToday.f1 = D; // 今日需求量已賣滿
+  assert.ok(!S.sellInventory('f1', 10).ok, '正常賣出被需求量擋住');
+  const expect = Math.round((D + 200) * E.sellPrice(bal, 'f1', st.res.rep, st.res.priceWalk) * bal.emergency.priceMul);
+  assert.equal(S.emergencyQuote('f1'), expect);
+  const r = S.emergencySell('f1');
+  assert.ok(r.ok && r.n === D + 200 && r.revenue === expect); assert.equal(st.res.inv.f1, 0); assert.equal(st.res.money, 100 + expect);
+  // 每片單價比正常賣出（含壓價）低
+  const per = E.emergencyRevenue(bal, 'f1', 20, 1, 100, 0) / 100;
+  assert.ok(per < E.sellRevenue(bal, 'f1', 20, 1, 160, 0, 160, 0) / 160);
+  // 舊庫存再打折
+  assert.ok(E.emergencyRevenue(bal, 'f1', 20, 1, 100, 10) < E.emergencyRevenue(bal, 'f1', 20, 1, 100, 0));
+  assert.ok(!S.emergencySell('f1').ok);
+});
+
+t('v3 自動賣出：價格指數 ≥ 門檻、或庫存 ≥ N；保留訂單量、遵守每日需求量', () => {
+  const A = { sell: true, sellIdx: 1.1, inv: false, invN: 250 };
+  assert.equal(E.autoSellPlan(bal, A, { inv: 100, walk: 1.2, room: 160 }), 100);
+  assert.equal(E.autoSellPlan(bal, A, { inv: 100, walk: 1.05, room: 160 }), 0);
+  assert.equal(E.autoSellPlan(bal, A, { inv: 100, walk: 1.2, room: 60 }), 60);
+  assert.equal(E.autoSellPlan(bal, A, { inv: 100, reserved: 70, walk: 1.2, room: 160 }), 30);
+  const B = { sell: false, sellIdx: 1.1, inv: true, invN: 250 };
+  assert.equal(E.autoSellPlan(bal, B, { inv: 200, walk: 9, room: 160 }), 0);
+  assert.equal(E.autoSellPlan(bal, B, { inv: 300, walk: 0.7, room: 160 }), 160); // 想賣 300−125=175，受每日需求量 160 限制
+  assert.equal(E.autoSellPlan(bal, B, { inv: 300, walk: 0.7, room: 999 }), 300 - 125);
+  assert.equal(E.autoSellPlan(bal, null, { inv: 300, walk: 2, room: 160 }), 0);
+  // 模擬：每日結算時觸發
+  const { st } = fresh3({ money: 5000 });
+  S.setMode('f1', 'pause');
+  S.setAuto('f1', { sell: true, sellIdx: 0.8 });
+  st.res.inv.f1 = 100;
+  let sold = 0; const off = bus.on('auto:sold', e => { sold += e.n; });
+  ticks(24);
+  if (typeof off === 'function') off();
+  assert.equal(sold, 100); assert.equal(st.res.inv.f1, 0); assert.ok(st.res.money > 5000 - 75);
+  S.setAuto('f1', { sell: true, sellIdx: 1.4 }); st.res.inv.f1 = 100; st.res.priceWalk = 0.9;
+  ticks(24); assert.equal(st.res.inv.f1, 100, '價格未達門檻不賣');
+});
+
+t('v3 低現金防護：現金低於門檻自動改「只做完在製品」並通知；手動硬開時讓路，錢回升後重新武裝', () => {
+  const { st } = fresh3({ money: 1500 });
+  S.setAuto('f1', { guard: true, guardCash: 2000 });
+  let trig = 0; const off = bus.on('guard:triggered', () => trig++);
+  const started = count('lot:started', () => ticks(1));
+  assert.equal(S.fabMode('f1'), 'drain'); assert.equal(trig, 1); assert.equal(started, 0);
+  S.setMode('f1', 'run');
+  assert.equal(st.fabs.f1.auto.hold, true);
+  ticks(3); assert.equal(S.fabMode('f1'), 'run'); assert.equal(trig, 1, '玩家手動恢復後不會立刻又被防護擋掉');
+  st.res.money = 3000; ticks(1); assert.equal(st.fabs.f1.auto.hold, false);
+  st.res.money = 1000; ticks(1);
+  if (typeof off === 'function') off();
+  assert.equal(S.fabMode('f1'), 'drain'); assert.equal(trig, 2);
+  assert.equal(E.guardDefault(bal, 'f1'), 1200); // (900 + 250) 取整到 100
+});
+
+t('v3 維運付不出來與狀態一致：運轉中扣聲望 1；只剩暫停／封存的小額維運只輕罰', () => {
+  const a = fresh3({ money: 0 });
+  S.setMode('f1', 'drain'); // 不投片
+  const r0 = a.st.res.rep; ticks(24);
+  near(a.st.res.rep, r0 - 1, 1e-9); assert.equal(a.st.res.money, 0);
+  const b = fresh3({ money: 0 });
+  S.setMode('f1', 'pause'); const r1 = b.st.res.rep; ticks(24);
+  near(b.st.res.rep, r1 - bal.mode.idleUnpaidRep, 1e-9);
+  const c = fresh3({ money: 100 }); // 封存的 25 付得起 → 不罰
+  S.setMode('f1', 'mothball'); const r2 = c.st.res.rep; ticks(24);
+  near(c.st.res.rep, r2, 1e-9); assert.equal(c.st.res.money, 75);
+});
+
+t('v3 斷鏈偵測：沒在製、沒庫存、錢不夠投 1 Lot → stuck；有貸款額度走貸款，否則給增資', () => {
+  const lot = E.lotCost(bal, 'f1');
+  const { st } = fresh3({ money: lot - 1 });
+  let d = S.deadEndInfo();
+  assert.ok(d.stuck); assert.equal(d.need, lot); assert.ok(d.loanOk); assert.ok(d.equipCount === 4 && d.refund > 0);
+  st.res.money = lot; assert.ok(!S.deadEndInfo().stuck);
+  st.res.money = 10; st.res.inv.f1 = 5; assert.ok(!S.deadEndInfo().stuck, '有庫存可賣 → 不算斷鏈');
+  st.res.inv.f1 = 0; st.fabs.f1.lots.push({ id: 1, slot: 0, progress: 0 }); assert.ok(!S.deadEndInfo().stuck, '有在製 → 不算斷鏈');
+  st.fabs.f1.lots = [];
+  // 缺機台：要看最便宜的缺口（furnace 700）
+  st.fabs.f1.slots[1] = null; st.res.money = 650; assert.ok(S.deadEndInfo().stuck);
+  st.res.money = 700; assert.ok(!S.deadEndInfo().stuck);
+  // 封存的廠：需要重啟費 + 1 Lot
+  fresh3({ money: lot + 100 }); S.setMode('f1', 'mothball');
+  d = S.deadEndInfo(); assert.ok(d.stuck); assert.equal(d.need, lot + 500);
+  // sim 會發出 deadend 事件；貸款後解除
+  fresh3({ money: 5 });
+  assert.equal(count('deadend', () => ticks(8)), 1);
+  assert.ok(S.takeLoan(2000).ok); assert.ok(!S.deadEndInfo().stuck);
+  // 貸款被封鎖（逾期）→ loanOk=false，rescueGrant 才給錢（並扣聲望）
+  const o = fresh3({ money: 5 });
+  o.st.res.loans.push({ id: 1, principal: 1000, owed: 1000, dueDay: 0, overdue: true });
+  d = S.deadEndInfo(); assert.ok(d.stuck && !d.loanOk && d.grant >= bal.rescue.min);
+  const rep0 = o.st.res.rep; const g = S.rescueGrant();
+  assert.ok(g.ok && o.st.res.money === 5 + d.grant); near(o.st.res.rep, rep0 - bal.rescue.repLoss, 1e-9);
+  assert.ok(!S.deadEndInfo().stuck); assert.ok(!S.rescueGrant().ok);
+  // 還有貸款額度時不給增資
+  fresh3({ money: 5 }); assert.ok(!S.rescueGrant().ok);
+  // 賣機台也是出路
+  const q = fresh3({ money: 5 }); const before = q.st.res.money;
+  assert.ok(S.sellEquip('f1', 0).ok); assert.ok(q.st.res.money > before);
+});
+
+t('v3 存檔 v2 → v3 migration：補上狀態／暖機／自動化／貸款並保留原資料', () => {
+  const v2 = { version: 2, clock: { tick: 48, speed: 1, paused: true }, rng: { seed: 5 },
+    res: { money: 321, rep: 22, inv: { f1: 3 } }, fabs: { f1: { unlocked: true, slots: [null, null, null, null], lots: [], rate: 1.2 } } };
+  const r = migrate(v2);
+  assert.ok(r.ok && r.save.version === 3);
+  assert.equal(r.save.fabs.f1.mode, 'run'); assert.equal(r.save.fabs.f1.ramp, 0); assert.equal(r.save.fabs.f1.rate, 1.2);
+  assert.equal(r.save.fabs.f1.auto.sell, false); assert.equal(r.save.fabs.f1.auto.guard, false);
+  assert.deepEqual(r.save.res.loans, []); assert.equal(r.save.res.money, 321);
+  assert.equal(v2.version, 2);
+  assert.equal(migrate({ ...v2, fabs: { f1: { ...v2.fabs.f1, mode: 'pause', auto: { sell: true } } } }).save.fabs.f1.mode, 'pause'); // 不覆蓋既有欄位
+  fresh3();
+  S.importJson(JSON.stringify(v2)); // normalize：載入後補齊所有廠
+  const s2 = S.getState();
+  assert.equal(S.fabMode('f2'), 'run'); assert.equal(s2.fabs.f1.auto.sellIdx, 1.1); assert.deepEqual(s2.res.loans, []);
+});
+
 
 t('無頭模擬：貪婪玩家的節奏（Fab 2 約第 18–28 天可負擔）', () => {
   const seeds = Array.from({ length: 12 }, (_, i) => (i + 1) * 7919);

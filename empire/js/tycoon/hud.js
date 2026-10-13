@@ -4,12 +4,15 @@ import * as S from './state.js';
 import * as Clock from './clock.js';
 import * as Ev from './events.js';
 import { el, fill, openDialog, toast, money, fmt } from './ui.js';
+import { installRescue } from './rescue.js';
 
 export function mountHud(root) {
   const bal = S.getBal();
   const vMoney = el('b', { text: '' });
   const vRep = el('b', { text: '' });
   const vInv = el('b', { text: '' });
+  const vDebt = el('b', { text: '' });
+  const debtBox = el('div', { class: 'ty-stat ty-stat--debt', hidden: true }, '貸款 ', vDebt);
   const invList = el('div', { class: 'ty-inv-list', hidden: true });
   const vTime = el('span', { class: 'ty-time', 'aria-live': 'polite' });
   const btnPause = el('button', { class: 'ty-btn ty-clk', 'data-tut': 'clock-pause', onclick: () => Clock.togglePause() });
@@ -25,6 +28,7 @@ export function mountHud(root) {
       el('div', { class: 'ty-hud-row' },
         el('div', { class: 'ty-stat' }, '資金 ', vMoney),
         el('div', { class: 'ty-stat' }, '聲望 ', vRep),
+        debtBox,
         invBtn),
       invList,
       el('div', { class: 'ty-hud-row ty-hud-clock' }, vTime, btnPause, btn1, btn2, btnMenu)));
@@ -34,6 +38,10 @@ export function mountHud(root) {
     vMoney.textContent = money(s.res.money);
     vRep.textContent = s.res.rep.toFixed(1) + ' / 100';
     vInv.textContent = fmt(S.totalInventory());
+    const owed = S.loanOwed();
+    debtBox.hidden = owed <= 0;
+    vDebt.textContent = money(owed);
+    debtBox.classList.toggle('is-overdue', S.loanOverdue());
     fill(invList, ...bal.fabOrder.filter(f => s.fabs[f].unlocked).map(f =>
       el('span', { class: 'ty-inv-item', text: `${bal.fabs[f].zh}：${s.res.inv[f]} / ${bal.invCap}` })));
   }
@@ -56,12 +64,14 @@ export function mountHud(root) {
   bus.on('state:changed', render);
   bus.on('tick', render);
   bus.on('clock:changed', renderClock);
-  bus.on('day', d => toast(`第 ${d.day} 日結算：維運 -${money(d.maint)}，倉儲 -${money(d.hold)}。庫存要自己到產線頁賣出！`));
+  bus.on('day', d => toast(`第 ${d.day} 日結算：維運 -${money(d.maint)}，倉儲 -${money(d.hold)}${d.interest ? `，貸款利息 +${money(d.interest)}（記在欠款）` : ''}。庫存要自己到產線頁賣出！`));
   bus.on('toast', m => { if (!window.EmpireNpc?.claimToast?.(m)) toast(m); }); // NPC 若接手轉述就不重複顯示
+  bus.on('auto:sold', ({ fabId, n, revenue }) => toast(`${bal.fabs[fabId].zh} 自動賣出 ${n} 片，入帳 ${money(revenue)}`));
   bus.on('fab:unlocked', ({ fabId }) => toast(`${bal.fabs[fabId].zh}（${bal.fabs[fabId].node}）開通了！`));
   render();
 
   mountEventDialogs();
+  installRescue();
 }
 
 // ---------- 事件彈窗 ----------

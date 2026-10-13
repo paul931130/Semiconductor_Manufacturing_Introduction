@@ -6,6 +6,7 @@ import { getFactText } from './shared/content.js';
 import { bootTycoon } from './tycoon/boot.js';
 import * as Clock from './tycoon/clock.js';
 import { fabStatsNow } from './tycoon/sim.js';
+import * as Eco from './tycoon/economy.js';
 import { openUnlockSheet } from './tycoon/unlock-view.js';
 import { el, fill, openDialog, toast, money, pct } from './tycoon/ui.js';
 import './puzzle/index.js'; // 註冊 window.startPuzzleSet，取代 bridge 的 stub
@@ -220,7 +221,7 @@ function renderHub() {
       const st = fabStatsNow(id);
       body = [
         ['線良率 Y', st.complete ? pct(st.Y) : '缺機台'], ['產能', st.interval ? `${Math.round(st.wafersPerDay)} 片/日` : '—'],
-        ['庫存', `${s.res.inv[id]} 片`], ['解謎星數比 S', pct(r, 0)]];
+        ['庫存', `${s.res.inv[id]} 片`], ['產線狀態', bal.mode.labels[Eco.modeOf(s.fabs[id])] + (s.fabs[id].ramp > 0 ? '（暖機中）' : '')], ['解謎星數比 S', pct(r, 0)]];
     } else {
       const u = S.unlockStatus(id);
       body = [
@@ -228,7 +229,8 @@ function renderHub() {
         ['聲望門檻', String(f.unlockRep)], ['星數比 S', pct(r, 0)]];
     }
     return el('article', { class: 'we-card' + (open ? '' : ' is-locked'), 'aria-label': `${f.zh} ${f.node}` },
-      el('h3', {}, f.zh, el('small', { text: `${f.node} · ${f.wafer}` }), el('span', { class: 'we-tag' + (open ? ' we-tag--on' : ''), text: open ? '已開通' : '未開通' })),
+      el('h3', {}, f.zh, el('small', { text: `${f.node} · ${f.wafer}` }), el('span', { class: 'we-tag' + (open ? ' we-tag--on' : ''), text: open ? '已開通' : '未開通' }),
+        open && Eco.modeOf(s.fabs[id]) !== 'run' && el('span', { class: 'we-tag we-tag--mode we-tag--' + Eco.modeOf(s.fabs[id]), text: bal.mode.labels[Eco.modeOf(s.fabs[id])] })),
       el('dl', {}, body.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })])),
       el('div', { class: 'we-stars', 'aria-label': `星數 ${nStars} / ${f.puzzleLevels * 3}`, text: starTxt }),
       el('button', { class: 'we-btn ' + (open ? 'we-btn--primary' : ''), type: 'button', 'data-tut': 'hub-' + id,

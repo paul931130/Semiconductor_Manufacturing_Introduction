@@ -204,3 +204,77 @@ export function fabStats(bal, fabId, fab, S, mods = {}, rep = 20, walk = 1) {
     breakEven: breakEvenYield(bal, fabId)
   };
 }
+
+// ---------- v3：產線狀態、貸款、緊急出清、自動化、斷鏈偵測（DESIGN §3.9） ----------
+export const MODES = ['run', 'drain', 'pause', 'mothball'];
+export const modeOf = fab => (fab && MODES.includes(fab.mode) ? fab.mode : 'run');
+/** 該狀態是否仍在加工（運轉／只做完在製品會推進 Lot；暫停與封存不會） */
+export const modeAdvances = mode => mode === 'run' || mode === 'drain';
+export const upkeepMul = (bal, mode) => bal.mode.upkeep[mode] ?? 1;
+/** 某廠某狀態的每日維運費 */
+export const fabUpkeep = (bal, fabId, mode) => Math.round(bal.fabs[fabId].maintenance * upkeepMul(bal, mode));
+/** 封存後重新啟動費 = 廠倍率 × restartPerMult */
+export const restartCost = (bal, fabId) => Math.round(fabMult(bal, fabId) * bal.mode.restartPerMult);
+
+/** 授信額度 = (基本額度 + 聲望 × perRep) × 已開通最高階廠的倍率，取整到 100 */
+export function creditLimit(bal, rep, unlockedIds) {
+  const top = Math.max(0, ...unlockedIds.map(id => fabIndex(bal, id)));
+  return Math.round((bal.loan.baseLimit + bal.loan.perRep * Math.max(0, rep)) * bal.fabMult[top] / 100) * 100;
+}
+export const loansOwed = loans => (loans || []).reduce((a, l) => a + l.owed, 0);
+export const loansOverdue = loans => (loans || []).some(l => l.overdue);
+/** 還能借多少（逾期中不能再借）。取整到 100 */
+export function loanAvailable(bal, rep, unlockedIds, loans) {
+  if (loansOverdue(loans)) return 0;
+  return Math.max(0, Math.floor((creditLimit(bal, rep, unlockedIds) - loansOwed(loans)) / 100) * 100);
+}
+/** 每日利息 = 本金 × 日利率（逾期加倍），累加到欠款 */
+export function loanInterest(bal, loan) {
+  return Math.round(loan.principal * (loan.overdue ? bal.loan.overdueRate : bal.loan.dailyRate));
+}
+
+/** 緊急出清營收 = 片數 × 單價 × 新鮮度 × priceMul；不受每日需求量限制、不壓價 */
+export function emergencyRevenue(bal, fabId, rep, walk, n, age = 0) {
+  if (n <= 0) return 0;
+  return Math.round(n * sellPrice(bal, fabId, rep, walk) * freshness(bal, age) * bal.emergency.priceMul);
+}
+
+/** 自動賣出：回傳這次要賣幾片（0 = 不賣）。price 達標賣到沒空間；庫存達標賣到 invKeepFrac × invN。reserved = 訂單保留量 */
+export function autoSellPlan(bal, auto, { inv, reserved = 0, walk, room }) {
+  if (!auto) return 0;
+  const free = Math.max(0, inv - reserved);
+  let want = 0;
+  if (auto.sell && walk >= auto.sellIdx - 1e-9) want = free;
+  if (auto.inv && inv >= auto.invN) want = Math.max(want, inv - Math.floor(auto.invN * bal.auto.invKeepFrac));
+  return Math.max(0, Math.min(Math.floor(want), free, room));
+}
+/** 低現金防護的預設門檻 = 1 Lot 成本 + 日維運（取整到 100） */
+export const guardDefault = (bal, fabId) => Math.round((lotCost(bal, fabId) + bal.fabs[fabId].maintenance) / 100) * 100;
+export const defaultAuto = () => ({ sell: false, sellIdx: 1.1, inv: false, invN: 250, guard: false, guardCash: 0, hold: false });
+
+/**
+ * 斷鏈偵測：沒有任何在製 Lot、沒有任何庫存，而且錢不夠做下一步（投 1 Lot／補最便宜的缺機台／封存廠的重啟＋投片）。
+ * 回傳 { stuck, need, loanAvail, equipCount, refund, grant }。
+ */
+export function deadEnd(bal, s) {
+  let lots = 0, inv = 0, need = Infinity, equipCount = 0, refund = 0;
+  const unlocked = [];
+  for (const id of bal.fabOrder) {
+    const fab = s.fabs[id];
+    if (!fab.unlocked) continue;
+    unlocked.push(id);
+    lots += fab.lots.length; inv += s.res.inv[id] || 0;
+    fab.slots.forEach(sl => { if (sl) { equipCount++; refund += sellRefund(bal, sl.invested); } });
+    const miss = fab.slots.map((sl, i) => (sl ? null : i)).filter(i => i != null);
+    if (miss.length) {
+      need = Math.min(need, ...miss.map(i => Math.min(...allowedEquip(bal, id, i).map(e => equipPrice(bal, id, e)))));
+    } else {
+      need = Math.min(need, lotCost(bal, id) + (modeOf(fab) === 'mothball' ? restartCost(bal, id) : 0));
+    }
+  }
+  const loanAvail = loanAvailable(bal, s.res.rep, unlocked, s.res.loans);
+  const stuck = lots === 0 && inv === 0 && Number.isFinite(need) && s.res.money < need;
+  const gap = Number.isFinite(need) ? Math.max(0, need - s.res.money) : 0;
+  const grant = Math.max(bal.rescue.min, Math.ceil(Math.max(0, need * bal.rescue.needMul - s.res.money) / 100) * 100);
+  return { stuck, need: Number.isFinite(need) ? need : 0, gap, loanAvail, loanOk: loanAvail >= Math.max(bal.loan.minBorrow, gap), equipCount, refund, grant };
+}

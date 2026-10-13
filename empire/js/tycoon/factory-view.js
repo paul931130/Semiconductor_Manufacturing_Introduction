@@ -10,6 +10,7 @@ import { fabStatsNow, fabMods, failedSlot } from './sim.js';
 import { getEquipment, getProcess } from '../shared/content.js';
 import { openUnlockSheet } from './unlock-view.js';
 import { mountMarket } from './market-view.js';
+import { mountOps } from './ops-view.js';
 import { el, fill, openDialog, toast, money, pct, fmt } from './ui.js';
 import { machineSVG, dockSVG, ghostSVG } from '../fab-art/machines.js';
 import * as Audio from '../audio.js';
@@ -39,15 +40,18 @@ export function mountFactoryView(root) {
     d.style.cssText = `--x:${(r(1) * 100).toFixed(1)}%;--y:${(r(2) * 100).toFixed(1)}%;--s:${(3 + r(3) * 3).toFixed(1)}px;--t:${(5 + r(4) * 5).toFixed(1)}s;--dl:${(-r(5) * 8).toFixed(1)}s;--dx:${((r(6) - .3) * 90).toFixed(0)}px;--dy:${((r(7) - .5) * 60).toFixed(0)}px`;
     return d;
   }));
-  const fx = [dust, el('div', { class: 'fa-darkwrap', 'aria-hidden': 'true' }), ...[0, 1, 2].map(() => el('span', { class: 'fa-emerg', 'aria-hidden': 'true' }))];
+  const modeTag = el('div', { class: 'fa-modetag', 'aria-hidden': 'true' });
+  const fx = [dust, el('div', { class: 'fa-darkwrap', 'aria-hidden': 'true' }), modeTag, ...[0, 1, 2].map(() => el('span', { class: 'fa-emerg', 'aria-hidden': 'true' }))];
   const line = el('div', { class: 'ty-line' }, cells, lots, ...fx);
   const actions = el('div', { class: 'ty-actions' });
   // 環境音音量（與 SFX 分開；元素固定不重建，拖曳時不會被打斷）
   const ambSlider = el('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(Audio.ambience.getVolume() * 100)), 'aria-label': '環境音音量（無塵室風扇與機台聲）' });
   ambSlider.addEventListener('input', () => Audio.ambience.setVolume(ambSlider.value / 100));
   const ambBox = el('div', { class: 'fa-amb' }, el('span', { text: '環境音' }), ambSlider);
-  const wrap = el('section', { class: 'ty-fab', 'aria-label': '晶圓廠產線' }, tabs, head, line, actions, ambBox);
+  const opsHost = el('div', { class: 'ty-ops-host' });
+  const wrap = el('section', { class: 'ty-fab', 'aria-label': '晶圓廠產線' }, tabs, head, line, actions, opsHost, ambBox);
   root.append(wrap);
+  mountOps(opsHost, () => cur);
   const market = mountMarket(wrap, () => cur);
 
   // ---------- 版面模式 ----------
@@ -90,6 +94,7 @@ export function mountFactoryView(root) {
       evText = `事件：${def.name}（剩 ${ev.daysLeft} 日）`;
       if (ev.id === 'rush_order') evText += ev.extra.accepted ? (ev.extra.pending ? '，待出貨' : '，已出貨') : '，未接單';
     }
+    const mode = Eco.modeOf(fab);
     const Y = st.Y;
     const profitable = Y >= st.breakEven;
     const proj = Eco.lineProjection(bal, cur, fab, S.starRatio(cur), fabMods(cur), s.res.rep, 1, 1);
@@ -97,19 +102,23 @@ export function mountFactoryView(root) {
     fill(head, 
       el('div', { class: 'ty-headline' },
         el('h2', { text: `${f.zh}　${f.node}　${f.wafer}` }),
+        mode !== 'run' && el('span', { class: 'ty-badge ty-badge--mode ty-badge--' + mode, 'data-tut': 'mode-badge', text: `${bal.mode.labels[mode]}（維運 ×${bal.mode.upkeep[mode]}）` }),
+        fab.ramp > 0 && el('span', { class: 'ty-badge ty-badge--warn', text: `暖機中 ${fab.ramp} 小時` }),
         evText && el('span', { class: 'ty-badge ty-badge--warn', text: evText })),
       el('div', { class: 'ty-kpis' },
         kpi('線良率 Y', pct(Y), profitable ? 'good' : 'bad', `Y = Π(1−dᵢ)×E，盈虧平衡 ${pct(st.breakEven, 0)}`),
         kpi('產能', st.interval ? `${Math.round(st.wafersPerDay)} 片/日` : '—', '', st.interval ? `每 ${st.interval.toFixed(1)} 小時投 1 Lot` : '產線不通'),
         kpi('今日單價', money(st.price), '', `行情 ×${s.res.priceWalk.toFixed(2)}　成本 ${money(f.cost)}/片`),
         kpi('庫存', `${s.res.inv[cur]} 片`, age >= 3 ? 'bad' : '', `庫齡 ${age.toFixed(1)} 日　賣出才入帳`),
-        kpi('預估日利潤', st.complete ? `${proj.profitPerDay >= 0 ? '+' : '−'}${money(Math.abs(proj.profitPerDay))}` : '—', proj.profitPerDay >= 0 ? 'good' : 'bad', `標準行情；維運 ${money(f.maintenance)}/日`),
+        kpi('預估日利潤', st.complete && mode === 'run' ? `${proj.profitPerDay >= 0 ? '+' : '−'}${money(Math.abs(proj.profitPerDay))}` : '—', proj.profitPerDay >= 0 && mode === 'run' ? 'good' : 'bad', mode === 'run' ? `標準行情；維運 ${money(f.maintenance)}/日` : `${bal.mode.labels[mode]}中；維運 ${money(Eco.fabUpkeep(bal, cur, mode))}/日`),
         kpi('解謎星數 S', pct(S.starRatio(cur), 0), '', '缺陷率 ×(1−0.5S)')),
       s.res.inv[cur] >= bal.startHaltInv && el('p', { class: 'ty-warn', role: 'status', text: `庫存已達 ${bal.startHaltInv} 片，產線暫停投片。賣出庫存後才會繼續生產。` }),
-      st.complete && s.res.money < Eco.lotCost(bal, cur) && s.res.inv[cur] > 0
-        ? el('p', { class: 'ty-warn ty-warn--big', role: 'alert', text: `資金不足，產線停擺！庫存有 ${s.res.inv[cur]} 片 — 趕快到下方「市場與訂單」按「全部賣出」換現金。` })
-        : st.complete && s.res.money < Eco.lotCost(bal, cur) && el('p', { class: 'ty-warn ty-warn--big', role: 'alert', text: `資金不足（需 ${money(Eco.lotCost(bal, cur))} 才能投 1 Lot），目前也沒有庫存可賣，等在製品出貨後再賣。` }),
-      bottleneckNote(proj, st),
+      mode === 'run' && st.complete && s.res.money < Eco.lotCost(bal, cur) && s.res.inv[cur] > 0
+        ? el('p', { class: 'ty-warn ty-warn--big', role: 'alert', text: `資金不足，產線停擺！庫存有 ${s.res.inv[cur]} 片 — 到「市場與訂單」按「全部賣出」，或用下方「營運控制」的緊急出清／貸款換現金。` })
+        : mode === 'run' && st.complete && s.res.money < Eco.lotCost(bal, cur) && el('p', { class: 'ty-warn ty-warn--big', role: 'alert', text: `資金不足（需 ${money(Eco.lotCost(bal, cur))} 才能投 1 Lot），目前也沒有庫存可賣。在製品出貨後再賣，或到下方「營運控制」申請貸款。` }),
+      mode === 'drain' && el('p', { class: 'ty-bn', role: 'status', text: fab.lots.length ? `只做完在製品：不再投新 Lot，還有 ${fab.lots.length} 個在製 Lot 會做完。要繼續生產，到「營運控制」切回運轉。` : '在製品已清空，這座廠不會再投片。可以切回運轉，或停機封存省維運費。' }),
+      (mode === 'pause' || mode === 'mothball') && el('p', { class: 'ty-bn', role: 'status', text: mode === 'pause' ? `暫停中：${fab.lots.length} 個在製 Lot 凍在原地，維運費 ×${bal.mode.upkeep.pause}。到「營運控制」恢復運轉（免費）。` : `停機封存中：維運費 ×${bal.mode.upkeep.mothball}。要重新啟動需付 ${money(Eco.restartCost(bal, cur))}，暖機約 1 日。` }),
+      mode === 'run' && bottleneckNote(proj, st),
       missing > 0 && el('p', { class: 'ty-warn', role: 'status', text: `缺機台：還有 ${missing} 個空槽，產線不通。點選空槽購買機台。` }),
       lastShip && lastShip.fabId === cur && el('p', { class: 'ty-muted', text: `最近出貨：${lastShip.good} / ${bal.lotSize} 片良品${lastShip.rush ? '（急件 2.5 倍價）' : ''}` }));
   }
@@ -216,7 +225,9 @@ export function mountFactoryView(root) {
     const fab = S.getState().fabs[cur];
     const evId = fab.event?.id;
     const outage = evId === 'power_outage';
-    const halted = fab.halt > 0 || outage;
+    const mode = Eco.modeOf(fab);
+    const frozen = mode === 'pause' || mode === 'mothball';
+    const halted = fab.halt > 0 || outage || frozen;
     const busy = new Set(fab.lots.map(l => l.slot));
     const bad = failedSlot(fab);
     slotBtns.forEach((b, i) => {
@@ -227,6 +238,8 @@ export function mountFactoryView(root) {
     });
     line.classList.toggle('fa-outage', outage);
     line.classList.toggle('fa-halt', halted);
+    for (const m of ['pause', 'mothball', 'drain']) line.classList.toggle('fa-mode-' + m, mode === m);
+    modeTag.textContent = mode === 'run' ? '' : bal.mode.labels[mode];
     line.classList.toggle('fa-particle', evId === 'particle');
     if (hotDock) hotDock.hidden = !(evId === 'rush_order' && !fab.event.extra.accepted);
     // 環境音：只在產線畫面可見、時鐘運轉時發聲；每個忙碌機台一條嗡聲

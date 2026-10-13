@@ -64,6 +64,7 @@ export function createTutorial() {
         { title: '賣出庫存', ...T('tut.run.sell'), target: 'btn-sell-all', block: false,
           enter: () => { base = soldCount; }, done: () => soldCount > base },
         { title: '訂單與轉速', ...T('tut.run.orders'), mode: 'next', pos: 'bottom', nextLabel: '知道了' },
+        { title: '資金吃緊怎麼辦', ...T('tut.run.ops'), mode: 'next', pos: 'bottom', nextLabel: '知道了' },
       ] },
       { id: 't-puzzle', steps: [
         { title: '想開 Fab 2 嗎？', ...T('tut.puzzle.intro'), mode: 'next', nextLabel: '去看看' },

@@ -190,3 +190,15 @@
 @media (prefers-reduced-motion: reduce) { .ty-lot.is-live { transition: none; } }
 .ty-line[data-mode="v"] .fa-txt { line-height: 1.22; }
 .ty-line[data-mode="v"] .ty-slot { overflow: visible; }
+
+/* ---------- v3 產線狀態：暫停／封存＝燈光調暗（沿用 .fa-halt 熄燈＋天車停擺）；只做完在製品＝照常運轉，只是不再進新料 ---------- */
+.fa-modetag { position: absolute; top: 6px; right: 8px; z-index: 9; pointer-events: none; font-size: 12px; font-weight: 700; letter-spacing: .08em; padding: 2px 10px;
+  border: 2px solid #ffb84a; border-radius: 6px; color: #ffb84a; background: rgba(8, 12, 22, .78); transform: rotate(-3deg); }
+.fa-modetag:empty { display: none; }
+.fa-mode-drain .fa-modetag { border-color: #4aa8ff; color: #9fd0ff; }
+.fa-mode-pause .fa-darkwrap { opacity: .42; }
+.fa-mode-mothball .fa-darkwrap { opacity: .86; }
+.fa-mode-pause .fa-emerg, .fa-mode-mothball .fa-emerg { opacity: 0; }
+.fa-mode-mothball .ty-slot { filter: grayscale(.6) brightness(.8); }
+.fa-mode-pause .ty-lot, .fa-mode-mothball .ty-lot { animation-play-state: paused; }
+.fa-mode-pause .fa-darkwrap, .fa-mode-mothball .fa-darkwrap { background: rgba(2, 5, 14, .72); }

@@ -124,3 +124,28 @@ body.ty-body { margin: 0; padding: 0 16px 48px; overscroll-behavior: contain; to
 .ty-upg caption { text-align: left; color: var(--ty-mut); font-size: 12px; padding-bottom: 4px; }
 .ty-upg th { text-align: left; font-weight: 400; color: var(--ty-mut); padding: 3px 4px 3px 0; }
 .ty-upg td { padding: 3px 4px; white-space: nowrap; }
+
+/* v3 營運控制：產線狀態、資金週轉、自動化、斷鏈救援 */
+.ty-ops { margin-top: 8px; }
+.ty-sub { font-size: 14px; margin: 12px 0 4px; }
+.ty-modes .ty-btn { flex: 1 1 calc(50% - 8px); text-align: left; min-height: 56px; }
+@media (min-width: 720px) { .ty-modes .ty-btn { flex: 1 1 calc(25% - 8px); } }
+.ty-mode.is-on { border-color: var(--ty-acc); box-shadow: 0 0 0 1px var(--ty-acc) inset; background: var(--ty-panel); }
+.ty-mode--pause.is-on, .ty-mode--mothball.is-on { border-color: var(--ty-warn); box-shadow: 0 0 0 1px var(--ty-warn) inset; }
+.ty-mode:disabled:not(.is-on) { opacity: .55; }
+.ty-badge--mode { border-color: var(--ty-acc); color: var(--ty-acc); font-weight: 700; }
+.ty-badge--pause, .ty-badge--mothball { border-color: var(--ty-warn); color: var(--ty-warn); }
+.ty-cashkpis { margin: 6px 0; }
+.ty-contract.is-overdue { border-color: var(--ty-bad); }
+.ty-stat--debt b { color: var(--ty-warn); } .ty-stat--debt.is-overdue b { color: var(--ty-bad); }
+.ty-auto-row { margin: 6px 0; padding: 6px 10px; background: var(--ty-panel); border-radius: 10px; }
+.ty-auto-row .ty-check { min-height: 44px; font-size: 13.5px; align-items: flex-start; padding-top: 6px; }
+.ty-auto-ctl { display: flex; align-items: center; gap: 10px; padding-bottom: 6px; }
+.ty-auto-ctl input[type="range"] { flex: 1; min-height: 32px; }
+.ty-auto-ctl output { min-width: 84px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ty-gold); font-size: 13px; }
+.ty-rescue-list { list-style: none; padding: 0; margin: 6px 0; max-height: 26vh; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.ty-rescue-list .ty-btn { width: 100%; text-align: left; }
+.ty-rescue .ty-choices .ty-btn { text-align: left; }
+.we-tag--mode { border-color: var(--we-accent, #4aa8ff); color: var(--we-accent, #4aa8ff); }
+.we-tag--pause, .we-tag--mothball { border-color: var(--we-warn, #ffb84a); color: var(--we-warn, #ffb84a); }
+.ty-mode.is-on:disabled { opacity: 1; color: var(--ty-fg); }

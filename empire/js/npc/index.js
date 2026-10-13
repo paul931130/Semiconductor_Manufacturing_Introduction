@@ -66,6 +66,18 @@ function eventDialog(ctx) {
   return true;
 }
 
+/** 斷鏈救援：林姐出面，內容（貸款／賣機台／增資按鈕）由 tycoon/rescue.js 提供。回傳 true 表示已接手 */
+function rescueDialog({ build, vars, done }) {
+  presentBlocking({
+    id: 'rescue.deadend', vars, label: '林姐：資金斷鏈',
+    build: ({ close }) => [build(close)]
+  }).then(reason => {
+    done();
+    if (reason === 'later') say('rescue.later', { vars, pri: 'normal', force: true });
+  });
+  return true;
+}
+
 function settingControl(cls = 'we-btn') {
   const b = el('button', cls + ' npc-mode');
   b.type = 'button';
@@ -92,7 +104,7 @@ export async function initNpc({ tutorialActive } = {}) {
     started = true;
     installTriggers();
   }
-  window.EmpireNpc = { eventDialog, claimToast, settingControl, say, lineText };
+  window.EmpireNpc = { eventDialog, rescueDialog, claimToast, settingControl, say, lineText };
   return window.EmpireNpc;
 }
 
